@@ -121,10 +121,13 @@ skeleton": all guardrails on, no content.
   terraform-validate, and secret-scan. Each passes trivially on an empty
   repo. Done when: a dummy PR shows all seven jobs green.
 
-- [ ] **B7. Branch protection** — `main` protected: require PR, require
+- [x] **B7. Branch protection** — `main` protected: require PR, require
   passing CI, no self-approval dismissal, no force pushes, require signed
   commits (nice-to-have). Done when: trying to push directly to `main` is
-  rejected.
+  rejected. _Completed 2026-10-05 ahead of schedule, immediately after the
+  initial push, via a GitHub ruleset named `protect-main` (Active). Rule
+  set requires PR, blocks force pushes, restricts deletions. Status-check
+  requirements will be added once CI jobs exist (B6)._
 
 - [ ] **B8. PR template** — `.github/pull_request_template.md` with what
   changed, why, how tested, breaking changes, rollback plan. Done when: PRs
@@ -219,3 +222,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | Date | Change |
 |---|---|
 | 2026-10-05 | Initial draft created at repo bootstrap. |
+| 2026-10-05 | B7 (branch protection) closed early via `protect-main` ruleset. |
