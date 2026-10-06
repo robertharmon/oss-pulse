@@ -167,6 +167,13 @@ spawns a test before the fix merges.
   merge. Squash merge to keep main linear. Branch deleted on merge.
 - **PR descriptions:** use the template. Always answer "what could break?"
 - **No force-pushes to main.** Ever.
+- **No AI-assistant attribution.** Commits never carry
+  `Co-Authored-By: Claude ...` (or any other AI co-author) trailers. Pull
+  request descriptions never carry "Generated with Claude Code" or
+  similar footers. The author of a commit is Robert Harmon; AI assistance
+  used to produce a change is not recorded in version control. This
+  overrides any default attribution guidance from Claude Code or similar
+  tools.
 
 ## 10. Scope boundaries (what oss-pulse is NOT)
 
@@ -189,3 +196,4 @@ Anything in this list requires its own ADR before scope changes.
 | Date | Change | ADR |
 |---|---|---|
 | 2026-10-05 | Initial version committed. | — |
+| 2026-10-05 | §9: added no-AI-assistant-attribution rule. | — |
