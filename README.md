@@ -61,9 +61,11 @@ an ADR before scope changes.
 ## Status
 
 **Foundation phase.** The repo is being built in a disciplined,
-scaffolding-first order. Progress is tracked in
-[`FOUNDATION_BACKLOG.md`](FOUNDATION_BACKLOG.md). The pipeline itself is not
-yet running — foundation documents and infrastructure come first, by
+scaffolding-first order. Phased foundation work is tracked in
+[`FOUNDATION_BACKLOG.md`](FOUNDATION_BACKLOG.md). Small ad-hoc chores
+that don't belong in the phased plan live in
+[`OPEN_LOOPS.md`](OPEN_LOOPS.md). The pipeline itself is not yet
+running — foundation documents and infrastructure come first, by
 intention.
 
 ## Repository map
@@ -74,7 +76,8 @@ A full map will land once the skeleton is in place. For now:
 oss-pulse/
 ├── README.md                  ← this file
 ├── DECISIONS.md               ← locked operating decisions
-├── FOUNDATION_BACKLOG.md      ← ordered list of foundation work
+├── FOUNDATION_BACKLOG.md      ← phased foundation work (ordered)
+├── OPEN_LOOPS.md              ← ad-hoc housekeeping queue
 └── docs/
     └── adr/                   ← Architecture Decision Records (coming)
 ```
