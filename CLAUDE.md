@@ -71,7 +71,7 @@ Pulled from `DECISIONS.md` §9 — treat as muscle memory:
 - **No AI-assistant attribution** — not in commits, not in PR
   descriptions. The author of a commit is Robert. AI assistance is not
   recorded in version control.
-- **Scope boundaries live in `DECISIONS.md` §10.** Anything beyond those
+- **Scope boundaries live in `DECISIONS.md` §11.** Anything beyond those
   (streaming, multi-cloud, multi-source, ML models, non-Slack alerting)
   requires an ADR first, not a code change.
 

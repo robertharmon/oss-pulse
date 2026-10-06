@@ -175,7 +175,36 @@ spawns a test before the fix merges.
   overrides any default attribution guidance from Claude Code or similar
   tools.
 
-## 10. Scope boundaries (what oss-pulse is NOT)
+## 10. Runtime, packaging, and deployment
+
+**No local Docker.** The pipeline is deployed as a container, but the
+container is built by Google, not by us.
+
+- **Deploy mode:** `gcloud run deploy --source .` — Cloud Run's
+  Buildpacks path. Google reads `pyproject.toml`, builds the image in
+  Cloud Build, pushes to Artifact Registry, deploys to Cloud Run. No
+  `Dockerfile` in the repo.
+- **Local dev tools** (`ruff`, `mypy`, `sqlfluff`, `pre-commit`, `uv`,
+  `gh`, `gcloud`, `terraform`) run **natively on the host** — not in
+  containers. They need to be fast and IDE-visible; containerizing
+  them hurts the dev loop and gains nothing.
+- **Project Python dependencies** are managed by `uv`, which creates
+  a project-local `.venv/` invisibly. No `pip install` into system
+  Python, ever. No manual venv activation.
+- **Why no Dockerfile:** Cloud Run accepts source and builds the image
+  for us. A hand-written Dockerfile would be maintenance tax (base
+  image updates, layer ordering, security scanning) for zero
+  functional gain. The portfolio story is still "containerized
+  serverless ETL on GCP" because the deployment artifact IS a
+  container — we just didn't write the Dockerfile.
+- **If we ever need a custom Dockerfile** (unusual base image, native
+  dependencies, build-time optimization), that's a new ADR.
+
+Rationale captured here rather than in a separate ADR because it's a
+project-wide operating decision, not an architectural trade-off with
+alternatives worth preserving.
+
+## 11. Scope boundaries (what oss-pulse is NOT)
 
 Said once, loudly, to resist feature creep:
 
@@ -197,3 +226,4 @@ Anything in this list requires its own ADR before scope changes.
 |---|---|---|
 | 2026-10-05 | Initial version committed. | — |
 | 2026-10-05 | §9: added no-AI-assistant-attribution rule. | — |
+| 2026-10-06 | §10 added: no local Docker; deploy via `gcloud run --source`; `uv` for Python deps. Section 10 (scope boundaries) renumbered to §11. | — |

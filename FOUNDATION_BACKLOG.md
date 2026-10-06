@@ -45,7 +45,7 @@ or cloud resources so every subsequent choice has something to check against.
   fine. Done when: a reader can trace one record from GH Archive to the
   Streamlit chart without reading any other doc.
 
-- [ ] **A6. CONVENTIONS.md** — naming (adapted from color-analytics'
+- [x] **A6. CONVENTIONS.md** — naming (adapted from color-analytics'
   conventions), SQL style, Python style, branch names, commit format, PR
   titles, when comments are required. Done when: committed; subsequent code
   review decisions reference it.
@@ -234,3 +234,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-05 | A4 (ADR 0001 — tech stack) and B10 (ADR template) closed together. |
 | 2026-10-06 | A14 added retroactively — project CLAUDE.md for session orientation. |
 | 2026-10-05 | A5 (architecture doc + diagram) closed. |
+| 2026-10-06 | A6 (CONVENTIONS.md) closed. |

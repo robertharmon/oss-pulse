@@ -335,7 +335,7 @@ Revisit when any of:
   single Cloud Run service, or an orchestrator replaces Cloud
   Scheduler).
 - A new source or environment is added — both require ADRs under
-  `DECISIONS.md` §10.
+  `DECISIONS.md` §11.
 
 Otherwise, re-read alongside ADR 0001 at its scheduled 2027-04-05
 checkpoint.
