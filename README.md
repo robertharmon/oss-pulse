@@ -53,7 +53,7 @@ Each becomes one `mart_*` table and one chart on the dashboard.
 
 ## Scope boundaries
 
-See [`DECISIONS.md`](DECISIONS.md) §10 for the full list. In brief: hourly
+See [`DECISIONS.md`](DECISIONS.md) §11 for the full list. In brief: hourly
 batch only (no streaming), single cloud (GCP), single source (GH Archive),
 no ML models, no PagerDuty-grade on-call. Anything beyond this list requires
 an ADR before scope changes.
