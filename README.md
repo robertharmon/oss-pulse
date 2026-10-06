@@ -75,11 +75,12 @@ A full map will land once the skeleton is in place. For now:
 ```
 oss-pulse/
 ├── README.md                  ← this file
+├── CLAUDE.md                  ← Claude Code session-startup instructions
 ├── DECISIONS.md               ← locked operating decisions
 ├── FOUNDATION_BACKLOG.md      ← phased foundation work (ordered)
 ├── OPEN_LOOPS.md              ← ad-hoc housekeeping queue
 └── docs/
-    └── adr/                   ← Architecture Decision Records (coming)
+    └── adr/                   ← Architecture Decision Records
 ```
 
 ## Running locally

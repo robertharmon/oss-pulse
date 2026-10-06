@@ -87,7 +87,15 @@ or cloud resources so every subsequent choice has something to check against.
   what "done" means for a solo PR. Done when: committed; subsequent sessions
   reference it when scope creeps.
 
-## Phase B — Repo scaffolding
+- [x] **A14. CLAUDE.md — Claude Code project orientation** — `CLAUDE.md`
+  at the repo root. Short file that orients a new Claude Code session on
+  the project: pointer to `FOUNDATION_BACKLOG.md` as the task tracker,
+  pointer to `DECISIONS.md` for locked choices, pointer to `OPEN_LOOPS.md`
+  for ad-hoc chores, pointer to `docs/adr/` for rationale, workflow
+  reflexes (branch names, commit style, no AI-attribution rule),
+  current-phase reminder. Done when: committed at repo root. _Added
+  retroactively 2026-10-06 to close the "how does a new session know
+  what to do" gap; realized after A4 landed._
 
 The dressed-but-empty repo. Every tool and gate that will protect subsequent
 code lands here, even when there's no code to protect yet. "Walking
@@ -224,3 +232,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-05 | Initial draft created at repo bootstrap. |
 | 2026-10-05 | B7 (branch protection) closed early via `protect-main` ruleset. |
 | 2026-10-05 | A4 (ADR 0001 — tech stack) and B10 (ADR template) closed together. |
+| 2026-10-06 | A14 added retroactively — project CLAUDE.md for session orientation. |
