@@ -33,7 +33,7 @@ or cloud resources so every subsequent choice has something to check against.
 - [x] **A3. FOUNDATION_BACKLOG.md** — this file. Done when: committed and
   reviewed; subsequent sessions open by reading it.
 
-- [ ] **A4. ADR 0001 — tech stack & rationale** — why BigQuery over
+- [x] **A4. ADR 0001 — tech stack & rationale** — why BigQuery over
   Snowflake/Databricks, why dbt, why Cloud Scheduler + Cloud Run over
   Airflow/Kestra, why Terraform. Michael Nygard ADR format
   (`Context / Decision / Consequences`). Done when: committed under
@@ -136,7 +136,7 @@ skeleton": all guardrails on, no content.
 - [ ] **B9. CODEOWNERS** — even if just you, the right habit. Done when:
   committed.
 
-- [ ] **B10. ADR template** — `docs/adr/0000-template.md` for future ADRs.
+- [x] **B10. ADR template** — `docs/adr/0000-template.md` for future ADRs.
   Done when: committed and referenced by ADR 0001.
 
 ## Phase C — Cloud bootstrap
@@ -223,3 +223,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 |---|---|
 | 2026-10-05 | Initial draft created at repo bootstrap. |
 | 2026-10-05 | B7 (branch protection) closed early via `protect-main` ruleset. |
+| 2026-10-05 | A4 (ADR 0001 — tech stack) and B10 (ADR template) closed together. |
