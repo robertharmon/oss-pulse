@@ -96,8 +96,30 @@ walking skeleton is in place.
 
 ## Project memory
 
-Session-doc / decision-log methodology (as described in Robert's global
-CLAUDE.md under "Optional per-project infrastructure") is **not** in use
-here. For now, the backlog + ADRs + PR descriptions + commit messages
-serve as the project's institutional memory. Revisit the choice if the
-project outgrows that.
+Session-doc / decision-log methodology is **in use** here. See
+[`documentation/`](documentation/):
+
+- **`documentation/SessionNN_YYYYMMDD_*.md`** — one self-contained
+  session document per meaningful working session. Future readers (human
+  or Claude) should be able to understand any session without reading
+  other files. Templates and procedures live at
+  `~/.claude/templates/project-history/`.
+- **`documentation/DECISION_LOG.md`** — session-indexed history
+  organized by subsystem. Chronological index + per-subsystem entries.
+  Updated after every session that produces one.
+
+At session end, if the session produced code changes, meaningful
+decisions, or analytical results worth preserving, create the session
+doc **before** closing out. Then update `DECISION_LOG.md` per
+`~/.claude/templates/project-history/DECISION_LOG_HOW_TO_GENERATE.md`.
+
+Current subsystems in use for the Decision Log:
+
+- **Foundation & Governance** — repo setup, docs, workflow, decisions,
+  backlog, CLAUDE.md
+- **Infrastructure & Cloud** — Terraform, GCP resources, IAM, Secret
+  Manager
+- **Data Ingestion** — fetchers, raw landing, Parquet schema
+- **Analytics & Modeling** — dbt staging/marts, data quality
+- **Orchestration & Observability** — scheduling, alerting, dashboards,
+  consumer layer
