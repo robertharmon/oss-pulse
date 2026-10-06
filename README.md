@@ -79,7 +79,9 @@ oss-pulse/
 ├── DECISIONS.md               ← locked operating decisions
 ├── FOUNDATION_BACKLOG.md      ← phased foundation work (ordered)
 ├── OPEN_LOOPS.md              ← ad-hoc housekeeping queue
+├── documentation/            ← per-session docs + decision log
 └── docs/
+    ├── architecture.md        ← system diagram + end-to-end record trace
     └── adr/                   ← Architecture Decision Records
 ```
 

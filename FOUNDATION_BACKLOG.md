@@ -39,7 +39,7 @@ or cloud resources so every subsequent choice has something to check against.
   (`Context / Decision / Consequences`). Done when: committed under
   `docs/adr/0001-tech-stack.md`.
 
-- [ ] **A5. Architecture doc + diagram** — `docs/architecture.md`. System
+- [x] **A5. Architecture doc + diagram** — `docs/architecture.md`. System
   diagram, component responsibilities, data flow narrative, failure
   boundaries, security boundaries. ASCII diagram is fine; hand-drawn PNG is
   fine. Done when: a reader can trace one record from GH Archive to the
@@ -233,3 +233,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-05 | B7 (branch protection) closed early via `protect-main` ruleset. |
 | 2026-10-05 | A4 (ADR 0001 — tech stack) and B10 (ADR template) closed together. |
 | 2026-10-06 | A14 added retroactively — project CLAUDE.md for session orientation. |
+| 2026-10-05 | A5 (architecture doc + diagram) closed. |
