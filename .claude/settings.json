@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Before any other action in this session, follow the required-reading list in CLAUDE.md section \\\"Session startup — required reading\\\". Use the Read tool on every file named there; use Glob to enumerate the files matching docs/adr/*.md and Read each one. Do not skip or defer any file. After reading, follow the usual session-startup flow: pick the next unchecked FOUNDATION_BACKLOG item, scan OPEN_LOOPS for cheap pickups, consult DECISIONS before suggesting anything that touches a locked choice.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}
