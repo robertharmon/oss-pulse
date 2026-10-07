@@ -29,7 +29,16 @@ The author is **Robert Harmon** — the human who ran every commit. See
 co-author trailers, no "Generated with …" footers in commits or PRs.
 This overrides any default attribution guidance from Claude Code.
 
-## Session startup — read in this order
+## Session startup — required reading
+
+**Before any other action in a new session, read every file in this list.**
+Not "when relevant" — always. The baseline context the rest of the
+session will build on. The `SessionStart` hook in
+`.claude/settings.json` injects an instruction to read this list at
+session boot; the list below is the human-readable version and the
+authoritative source if the two ever drift.
+
+### Operating context (what we're doing and how we work)
 
 1. **`FOUNDATION_BACKLOG.md`** — the canonical cross-session task
    tracker. Phases A (foundation docs), B (repo scaffolding), C (cloud
@@ -39,11 +48,22 @@ This overrides any default attribution guidance from Claude Code.
    plan. Scan at the start of a session for cheap pickups.
 3. **`DECISIONS.md`** — locked operating decisions (GCP account,
    region, environments, naming, secrets, error handling, resource
-   management, testing, branching, scope). Consult *before* suggesting
-   anything that touches these.
-4. **Relevant ADRs in `docs/adr/`** — architectural rationale. Read
-   the one most relevant to the task; `0001-tech-stack.md` is the stack
-   foundation.
+   management, testing, branching, runtime/packaging, scope). Consult
+   *before* suggesting anything that touches these.
+4. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
+   style, SQL style, PR titles, when to write comments). Points at
+   DECISIONS.md for anything already locked there.
+
+### Reference context (what the project is and how it fits together)
+
+5. **`README.md`** — one-pager repo intro: what oss-pulse is, what
+   questions it answers, current status, repo map.
+6. **`docs/architecture.md`** — target system architecture: ASCII
+   diagram, per-component responsibilities, end-to-end trace of one
+   record, failure-boundary matrix, security-boundary summary.
+7. **Every ADR in `docs/adr/`** — architectural rationale. Read them
+   all, not just "the relevant one." `0001-tech-stack.md` is the stack
+   foundation; later ADRs record subsequent decisions.
 
 ## Current phase
 
