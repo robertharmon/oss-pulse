@@ -17,13 +17,16 @@ Billing cap: **$0/month target**, enforced on **both** projects
   - **Billing kill switch.** A budget triggers a small Cloud Run function
     that unlinks billing when spend crosses $2/month (dev) or $5/month
     (prod). Notifications lag, so a small overshoot is possible. Unlinking
-    stops every service in the project until billing is re-linked by hand.
+    stops every service in the project, and Google warns that resources
+    might be irretrievably deleted. That's acceptable because all project
+    data is re-derivable from GH Archive.
   - **BigQuery custom query quota** of 10 GB scanned/day per project
     (queries only; it doesn't cap storage).
-  - **7-day default table expiration** on dev datasets, which bounds dev
-    storage.
-- **Notifications only:** Google budget alerts at $1 and $5. **Budget alerts
-  send email; they do not stop spending.**
+  - **7-day default table expiration** on dev datasets, plus a 7-day
+    lifecycle-delete rule on the dev bucket, which bound dev storage.
+- **Notifications only:** Google budget email alerts (dev: $1 and $2;
+  prod: $1 and $5). **Budget alerts send email; they do not stop
+  spending.**
 - **Design choice:** prefer serverless-and-free services (Cloud Scheduler,
   Cloud Run, Streamlit Community Cloud) over always-on VMs.
 

@@ -257,8 +257,10 @@ phase, the cloud account mirrors what the operating docs promise.
 - [ ] **C10. Agent identities** *(author)* — bot Google account, bot GitHub
   account with write access, and the dev-only `osp-builder-dev` service
   account with token-minting granted to the bot (ADR 0002 §2). Done when:
-  the agent's machine has no author login, and the bot can query dev
-  BigQuery but gets 403 on prod.
+  the agent's machine has no author login (including in Windows Credential
+  Manager), the bot can query dev BigQuery, gets 403 on billing, and a
+  bot-opened PR into `main` can't be merged without the author's approval.
+  Once prod exists, it also gets 403 on every prod resource.
 
 ## Phase D — Walking-skeleton smoke test
 

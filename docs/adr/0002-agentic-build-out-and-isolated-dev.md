@@ -52,7 +52,7 @@ Spending guards, applied to **both** projects:
 
 | Guard | What it does | Hard or soft |
 |---|---|---|
-| **Billing kill switch** (Google's documented "disable billing with notifications" pattern) | A budget publishes to Pub/Sub. A small Cloud Run function **unlinks billing** from the project when spend crosses the budget. Dev threshold: $2/month. Prod threshold: $5/month. | Hard, with a lag. Budget notifications arrive with some delay, so a small overshoot is possible. Unlinking shuts down every service in the project until billing is re-linked by hand. |
+| **Billing kill switch** (Google's documented "disable billing with notifications" pattern) | A budget publishes to Pub/Sub. A small Cloud Run function **unlinks billing** from the project when spend crosses the budget. Dev threshold: $2/month. Prod threshold: $5/month. | Hard, with a lag. Budget notifications arrive with some delay, so a small overshoot is possible. Unlinking shuts down every service in the project, and Google warns that resources *might be irretrievably deleted*, with no guaranteed recovery. Acceptable here because every dataset and file is re-derivable from GH Archive (§Consequences). |
 | **BigQuery custom query quota** | Rejects queries past a daily scan limit. Dev: 10 GB/day. Prod: 10 GB/day, plus a per-user quota on the dashboard identity so a leaked dashboard key can't starve dbt. | Hard |
 | **Dev default table expiration** | Every dev dataset auto-deletes tables 7 days after creation, so dev storage can't pile up. Test fixtures are reloaded on demand. | Hard (bounds storage) |
 | **Agent identity scope** | The agent's identity can only use BigQuery and the dev bucket. It can't create resources in any other service (§2). | Hard (IAM) |
@@ -73,7 +73,7 @@ other environment.
 
 | Where | Agent identity | Can | Can't |
 |---|---|---|---|
-| GitHub | A **bot GitHub account** created by the author, added to the repo as a collaborator with **write** (not admin) | Push branches, open PRs, merge PRs into `build/agentic` when the branch rules allow | Change branch rules, rulesets, secrets or settings. Bypass required checks or required reviews. Merge to `main`. |
+| GitHub | A **bot GitHub account** created by the author, added to the repo as a collaborator with **write** (not admin). It uses a classic token (`repo` + `workflow` scopes), which its Write role still limits; fine-grained tokens can't act on a personal repo the bot only collaborates on. | Push branches, open PRs, merge PRs into `build/agentic` when the branch rules allow | Change branch rules, rulesets, environments, secrets or settings. Bypass required checks or required reviews. Merge to `main`, because `main` requires the author's approving review. |
 | GCP | A **bot Google account** created by the author (the same identity's email can back the GitHub bot). Its only grant is permission to mint short-lived tokens for `osp-builder-dev`. | Act as `osp-builder-dev`: BigQuery in the dev project, and objects in the dev bucket | Anything in prod. Billing. IAM. Creating projects. |
 
 - **The author's Owner login stays off the agent's machine.** No `gcloud`
@@ -82,20 +82,30 @@ other environment.
   the cutover session.
 - **No service-account key files** for the agent. The bot Google account's
   login can only mint tokens for one dev-only service account.
-- **Claude Code permission rules** in `.claude/settings.json` deny
-  `gcloud billing`, `gcloud iam`, `gcloud projects`, and commands naming the
-  prod project ID. These are defense in depth: easy to get around, and
-  not relied on.
+- **Claude Code permission rules** in `.claude/settings.json` (added in
+  B11) will deny `gcloud billing`, `gcloud iam`, `gcloud projects`, and
+  commands naming the prod project ID. These are defense in depth: easy to
+  get around, and not relied on.
 
 ### 3. Branch rules make the verifiers binding
 
-- **A ruleset on `build/agentic`** requires PRs, requires every CI check to
-  pass, and blocks force-pushes. The bot has no bypass.
-- **CODEOWNERS plus required code-owner review** for:
-  - `.github/**`,
-  - `tests/fixtures/**`, `tests/expected/**`,
-  - `docs/data_contract.md`,
-  - the verifier scripts.
+- **A ruleset on `build/agentic`** requires PRs and blocks force-pushes
+  and deletion from the start. Required CI checks are added as they exist
+  (B11). The bot has no bypass.
+- **`main` requires one approving review** from the author (code owner of
+  `*`). The bot, a Write collaborator, can open milestone PRs but can't
+  merge them.
+- **CODEOWNERS plus required code-owner review** for every file that
+  defines or could weaken a check:
+  - `.github/**`, including `CODEOWNERS` itself;
+  - `.claude/**`;
+  - `tests/fixtures/**`, `tests/expected/**`;
+  - the verifier scripts;
+  - tool configs: `pyproject.toml`, `.sqlfluff`,
+    `.pre-commit-config.yaml`, `dbt_project.yml` and dbt `schema.yml`
+    files;
+  - `docs/data_contract.md`, `docs/access_matrix.md`;
+  - `terraform/**`.
 
   A PR touching these needs the author's approval. So an agent can't weaken
   a check in the same PR that would otherwise fail it.
@@ -189,7 +199,10 @@ Built in milestone 2 and specified in the content-phase roadmap:
 **Negative / cost:**
 - The author creates more accounts up front: a bot Google account, a bot
   GitHub account, two projects, and the kill switch.
-- The kill switch is blunt. If it fires on prod, the whole pipeline stops
+- The kill switch is blunt, and Google warns that unlinking billing can
+  irretrievably delete resources. That's tolerable because nothing in
+  either project is original: raw files, tables and marts can all be
+  rebuilt from GH Archive, and code lives in git. If it fires on prod, the whole pipeline stops
   until the author re-links billing. For a $0-target portfolio project,
   that's the intended trade.
 - Required code-owner review on check-defining files means some agent PRs
