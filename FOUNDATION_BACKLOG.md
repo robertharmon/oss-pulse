@@ -50,7 +50,7 @@ or cloud resources so every subsequent choice has something to check against.
   titles, when comments are required. Done when: committed; subsequent code
   review decisions reference it.
 
-- [ ] **A7. Data contract** — `docs/data_contract.md`. Upstream sources
+- [x] **A7. Data contract** — `docs/data_contract.md`. Upstream sources
   (GH Archive) with known SLAs and failure modes, tables we produce (grain,
   freshness, columns), downstream consumers (the Streamlit dashboard,
   initially — ourselves). Versioning rule: how we add/deprecate columns.
@@ -70,6 +70,37 @@ or cloud resources so every subsequent choice has something to check against.
 - [ ] **A10. 90-day roadmap** — `docs/roadmap.md`. Milestones for months 1,
   2, 3 with measurable "done" criteria for each. Done when: committed and
   reviewed; serves as the content-phase sequencer after foundation ends.
+
+  **Inputs to fold in** (gaps found 2026-11-11 that no backlog item covers):
+  - **Agentic build-out plan** — TDD + verifier workflow, `build/agentic`
+    integration branch, no-billing sandbox dev project, staged manual
+    cutover. This is the content-phase operating model; record it via ADR
+    + DECISIONS §1/§3 updates.
+  - **Ingest ADR** — scheduler offset (`5 * * * *` has ~0 margin; see
+    `docs/data_contract.md` §8) and initial backfill window.
+  - **`raw_ingest_audit` table + miss-rate alert job** (contract §3.3) —
+    not yet in `docs/architecture.md`.
+  - **`primary_language` source** (contract §5.7) — GitHub API + token in
+    Secret Manager, or NULL. Two marts depend on it.
+  - **Great Expectations on raw** — promised by ADR 0001 and README; no
+    item yet.
+  - **Cloud Run services, Scheduler job, alert policy in Terraform** — C5
+    covers buckets/datasets/SAs/secrets only.
+  - **Deploy workflow** — nothing builds/deploys services on merge (C6 is
+    Terraform-only).
+  - **Production alert path** — C8 proves CI → Slack, not Cloud Logging →
+    Slack.
+  - **Storage retention vs. free tiers** — "keep forever" in
+    `architecture.md` §3 will exceed GCS (5 GB) and BigQuery (10 GB) free
+    storage within months; belongs in A11.
+  - **`architecture.md` drift** — still says Docker/Artifact Registry
+    (contradicts DECISIONS §10), 0.5–1 GB files (measured 2–14 MB),
+    PushEvent in trending, "Cloud Run auto-retries 3×" (retries live on
+    the Scheduler job), and "data contract not yet written".
+  - **License + making the repo public** (README "License" section).
+  - **v1 "done" definition** — when is the project finished?
+  - **`ROADMAP.md` duplication** — the "When this backlog is empty" step 2
+    copies `docs/roadmap.md` to a second file; keep one.
 
 - [ ] **A11. Budget & cost model** — `docs/cost_model.md`. Expected monthly
   spend by service (should be $0), the BigQuery scan quota, cost-alerting
@@ -235,3 +266,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-06 | A14 added retroactively — project CLAUDE.md for session orientation. |
 | 2026-10-05 | A5 (architecture doc + diagram) closed. |
 | 2026-10-06 | A6 (CONVENTIONS.md) closed. |
+| 2026-10-07 | A7 (data contract) closed. |

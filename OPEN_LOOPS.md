@@ -31,6 +31,17 @@ Status markers:
 - (empty — add items here when something is tentatively decided but
   deserves a second look after more context lands)
 
+## Docs reconciliation
+
+- [ ] **Reconcile README's four questions with `docs/data_contract.md`
+  §5.** The data-contract PR landed with three marts whose columns
+  diverge from README phrasing because `PushEvent` is absent from the
+  current GH Archive feed. Specifically: README Q1 says "stars, PRs,
+  **or pushes**" (drop "pushes"), Q3 says "**commits per author**"
+  (now PR-opens per actor), Q4 says "**commit** and PR distribution"
+  (drop "commit"). Fix the README wording to match the contract. See
+  `docs/data_contract.md` §8.
+
 ## Things to double-check once CI exists (gated on B6)
 
 - [ ] **Add CI status checks to the `protect-main` ruleset** — the
