@@ -64,7 +64,7 @@ or cloud resources so every subsequent choice has something to check against.
   initially — ourselves). Versioning rule: how we add/deprecate columns.
   Done when: every mart table has a contract entry before it's built.
 
-- [ ] **A8. Access matrix** — `docs/access_matrix.md`. Who/what can read and
+- [x] **A8. Access matrix** — `docs/access_matrix.md`. Who/what can read and
   write each dataset, bucket, secret, and Terraform state. Even solo, this
   defines the service-account roles. Done when: Terraform IAM later
   implements exactly this table.
@@ -311,3 +311,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-06 | A6 (CONVENTIONS.md) closed. |
 | 2026-10-07 | A7 (data contract) closed. |
 | 2026-11-11 | Agentic build-out adopted (ADR 0002): header note added, B11 (verifier tooling) added, C1/C2 marked author-only and C1 split into two projects, C9 (kill switch) and C10 (agent identities) added. |
+| 2026-11-11 | A8 (access matrix) closed. |
