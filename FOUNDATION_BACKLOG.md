@@ -64,7 +64,7 @@ or cloud resources so every subsequent choice has something to check against.
   initially — ourselves). Versioning rule: how we add/deprecate columns.
   Done when: every mart table has a contract entry before it's built.
 
-- [ ] **A8. Access matrix** — `docs/access_matrix.md`. Who/what can read and
+- [x] **A8. Access matrix** — `docs/access_matrix.md`. Who/what can read and
   write each dataset, bucket, secret, and Terraform state. Even solo, this
   defines the service-account roles. Done when: Terraform IAM later
   implements exactly this table.
@@ -104,7 +104,12 @@ or cloud resources so every subsequent choice has something to check against.
   - **`architecture.md` drift** — still says Docker/Artifact Registry
     (contradicts DECISIONS §10), 0.5–1 GB files (measured 2–14 MB),
     PushEvent in trending, "Cloud Run auto-retries 3×" (retries live on
-    the Scheduler job), and "data contract not yet written".
+    the Scheduler job), and "data contract not yet written". Also from
+    the access matrix: §7 has dbt reading the bucket (it doesn't), a
+    "reviewer" SA (dropped), "no human access in prod" (the solo author
+    is Owner), and line ~135 puts the Streamlit key in Secret Manager
+    (it lives in Streamlit secrets). Line ~97 calls dbt a Cloud Run "job";
+    the matrix assumes a service. Pick one in the ingest ADR.
   - **License + making the repo public** (README "License" section).
   - **v1 "done" definition** — when is the project finished?
   - **`ROADMAP.md` duplication** — the "When this backlog is empty" step 2
@@ -311,3 +316,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-06 | A6 (CONVENTIONS.md) closed. |
 | 2026-10-07 | A7 (data contract) closed. |
 | 2026-11-11 | Agentic build-out adopted (ADR 0002): header note added, B11 (verifier tooling) added, C1/C2 marked author-only and C1 split into two projects, C9 (kill switch) and C10 (agent identities) added. |
+| 2026-11-11 | A8 (access matrix) closed. |
