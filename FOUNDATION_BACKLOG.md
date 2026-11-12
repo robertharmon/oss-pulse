@@ -69,7 +69,7 @@ or cloud resources so every subsequent choice has something to check against.
   defines the service-account roles. Done when: Terraform IAM later
   implements exactly this table.
 
-- [ ] **A9. On-call & incident runbook** — `RUNBOOK.md`. Alert routing
+- [x] **A9. On-call & incident runbook** — `RUNBOOK.md`. Alert routing
   (Slack webhook), incident template (timeline, impact, root cause,
   follow-ups), severity levels with concrete examples. Starts mostly empty;
   grows with every real incident. Done when: committed and ready to accept
@@ -317,3 +317,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-07 | A7 (data contract) closed. |
 | 2026-11-11 | Agentic build-out adopted (ADR 0002): header note added, B11 (verifier tooling) added, C1/C2 marked author-only and C1 split into two projects, C9 (kill switch) and C10 (agent identities) added. |
 | 2026-11-11 | A8 (access matrix) closed. |
+| 2026-11-11 | A9 (runbook) closed. |
