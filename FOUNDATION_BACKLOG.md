@@ -104,7 +104,12 @@ or cloud resources so every subsequent choice has something to check against.
   - **`architecture.md` drift** — still says Docker/Artifact Registry
     (contradicts DECISIONS §10), 0.5–1 GB files (measured 2–14 MB),
     PushEvent in trending, "Cloud Run auto-retries 3×" (retries live on
-    the Scheduler job), and "data contract not yet written".
+    the Scheduler job), and "data contract not yet written". Also from
+    the access matrix: §7 has dbt reading the bucket (it doesn't), a
+    "reviewer" SA (dropped), "no human access in prod" (the solo author
+    is Owner), and line ~135 puts the Streamlit key in Secret Manager
+    (it lives in Streamlit secrets). Line ~97 calls dbt a Cloud Run "job";
+    the matrix assumes a service. Pick one in the ingest ADR.
   - **License + making the repo public** (README "License" section).
   - **v1 "done" definition** — when is the project finished?
   - **`ROADMAP.md` duplication** — the "When this backlog is empty" step 2

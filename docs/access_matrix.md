@@ -39,7 +39,10 @@
 
 ## 2. Principals
 
-Member strings are written exactly as they'll appear in Terraform.
+Member strings are written as they'll appear in Terraform. In §4,
+`<name>@…` is shorthand for `<name>@<that table's project>.iam.gserviceaccount.com`,
+and `principalSet://…dev…/` or `…prod…/` for the full pool path shown
+below. The B11 diff script expands both.
 `<author-email>`, `<bot-email>`, `<yyyy>`, `<pool>` and `<prod-project-number>`
 are filled in at setup. The GitHub repository is pinned by its immutable
 numeric ID, `1406578436` (owner ID `1310922`), not its name.
@@ -58,7 +61,7 @@ numeric ID, `1406578436` (owner ID `1310922`), not its name.
 | Terraform plan SA | `serviceAccount:osp-tf-plan-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | `terraform plan` in the `prod-plan` GitHub Environment |
 | Terraform apply SA | `serviceAccount:osp-tf-apply-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | `terraform apply` in the `prod-apply` GitHub Environment |
 | Deploy SA | `serviceAccount:osp-deploy-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Service deploys in the `prod-deploy` GitHub Environment |
-| Kill-switch SA | `serviceAccount:osp-killswitch-<env>@<project>.iam.gserviceaccount.com` | dev, prod | The billing kill-switch function (DECISIONS §1) |
+| Kill-switch SA | `serviceAccount:osp-killswitch-<env>@<project>.iam.gserviceaccount.com` | dev, prod | The billing kill-switch function and its Pub/Sub trigger (DECISIONS §1) |
 
 ### GitHub identities (WIF principal sets)
 
@@ -67,8 +70,10 @@ A workload identity pool in each project trusts GitHub's OIDC issuer.
   `assertion.repository_id == '1406578436' && assertion.event_name != 'pull_request_target'`.
 - **Mapped attributes:**
   `attribute.repository_id = assertion.repository_id` and
-  `attribute.gh_env = assertion.environment` (empty when a job has no
-  environment).
+  `attribute.gh_env = assertion.environment`. GitHub only sends the
+  `environment` claim for jobs that name one, so jobs without an
+  environment can never match a `gh_env` principal set. Setup verifies
+  that such tokens are refused rather than mapped to an empty value.
 
 | Principal set | Member string | Matches |
 |---|---|---|
@@ -79,9 +84,15 @@ A workload identity pool in each project trusts GitHub's OIDC issuer.
 
 **GitHub Environment protection** is configured by the author and is what
 actually guards prod:
-- **`prod-plan`:** the author is a required reviewer. A job can only get a
-  prod-plan token after the author approves that run. An agent branch
-  can't trigger it alone.
+- **`prod-plan`:**
+  - The author is a required reviewer, so a job can only get a prod-plan
+    token after the author approves that run.
+  - Deployment branches are limited to `main` and `build/agentic`. Both are
+    ruleset-protected, and changes to `.github/**` there need the author's
+    code-owner review.
+  - So the workflow asking for the token was itself reviewed. An agent
+    branch can't even request it. (GitHub's approval screen doesn't show
+    the workflow diff, which is why the branch limit matters.)
 - **`prod-apply` / `prod-deploy`:** the author is a required reviewer,
   **and** deployment is limited to the `main` branch.
 
@@ -91,9 +102,22 @@ The bot has write access but not admin, so it can't change these settings.
 
 The dev project is billed but capped (DECISIONS §1).
 - **The agent can only use BigQuery and one bucket**, `osp-raw-events-dev`,
-  so that's all dev hosts during the build.
-- Cloud Run, Scheduler, Secret Manager and alerting are prod-only until
-  cutover. The `-dev` runtime identities aren't created.
+  so that's all it builds against.
+- **The only other thing in dev is the kill switch:** one Cloud Run
+  function, plus its Pub/Sub topic and budget, deployed by the author.
+- Pipeline Cloud Run services, Scheduler, Secret Manager and alerting are
+  prod-only until cutover. The `-dev` pipeline runtime identities aren't
+  created.
+- **Dev datasets** (`osp_raw_dev`, `osp_staging_dev`, `osp_analytics_dev`)
+  are created by the author with a 7-day default table expiration.
+  - The builder can also create its own scratch datasets (project-level
+    `dataEditor`), and becomes their owner implicitly. That ownership
+    includes changing those datasets' access lists. It's an IAM-like power,
+    but only over its own dev scratch data.
+  - It also means the 7-day expiration is a default the builder could skip
+    on a dataset it creates. **The budget and kill switch are the real
+    storage cap.** B11 adds a check that flags any dev dataset without the
+    expiration.
 - **Dev Terraform state** is local and disposable, kept out of git by
   `.gitignore`. Dev holds nothing worth a state bucket.
 
@@ -117,12 +141,16 @@ Condition):
 |---|---|---|---|---|
 | `user:<author-email>` | `project:oss-pulse-dev-<yyyy>` | `roles/owner` | - | Someone must own it. |
 | `user:<bot-email>` | `sa:osp-builder-dev` | `roles/iam.serviceAccountTokenCreator` | - | The bot's only power: minting short-lived tokens for the build SA. No project role at all. |
-| `serviceAccount:osp-builder-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.user` | - | Run queries and create datasets. It owns the datasets it creates, so no per-dataset grants are needed. |
+| `serviceAccount:osp-builder-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.dataEditor` | - | Read and write every dev dataset, including the author-created `osp_*_dev`, and create scratch datasets (see §3 for the implicit ownership that brings). |
+| `serviceAccount:osp-builder-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.jobUser` | - | Run queries and load jobs. |
 | `serviceAccount:osp-builder-dev@…` | `bucket:osp-raw-events-dev` | `roles/storage.objectUser` | - | Test the ingest GCS step for real. Read, write, overwrite. |
-| `serviceAccount:osp-ci-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.user` | - | Per-PR builds in throwaway datasets CI creates and deletes. |
-| `serviceAccount:osp-ci-dev@…` | `dataset:oss-pulse-dev-<yyyy>.osp_raw_dev` | `roles/bigquery.dataViewer` | - | Per-PR dbt builds read the shared raw fixtures as their source. |
+| `serviceAccount:osp-ci-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.dataEditor` | - | Each PR run creates a throwaway dataset, loads the checked-in fixtures into it, builds, and deletes it. It doesn't read shared dev tables, which expire weekly. |
+| `serviceAccount:osp-ci-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.jobUser` | - | Run the build's queries and load jobs. |
 | `principalSet://…dev…/attribute.repository_id/1406578436` | `sa:osp-ci-dev` | `roles/iam.workloadIdentityUser` | - | Any workflow in this repo may act as dev CI. Dev only. |
-| `serviceAccount:osp-killswitch-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/billing.projectManager` | - | Unlink billing when the budget is crossed. If Google requires a billing-account-level role instead, record it here at setup (ADR 0002 §1). |
+| `serviceAccount:osp-killswitch-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/billing.projectManager` | - | Unlink billing when the budget is crossed. |
+| `serviceAccount:osp-killswitch-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/browser` | - | Google's "modify project billing" permissions need Project Browser alongside Project Billing Manager. |
+| `serviceAccount:osp-killswitch-dev@…` | `billing-account:<billing-account-id>` | `roles/billing.viewer` | - | Also required by Google to change a project's billing link. Applied by the author on the billing account. |
+| `serviceAccount:osp-killswitch-dev@…` | `run-service:oss-pulse-dev-<yyyy>/us-central1/osp-killswitch-dev` | `roles/run.invoker` | - | The Pub/Sub trigger runs as this identity and must be allowed to call the function. |
 
 ### 4.2 Prod (`oss-pulse-<yyyy>`)
 
@@ -156,6 +184,9 @@ Condition):
 | `principalSet://…prod…/attribute.gh_env/prod-apply` | `sa:osp-tf-apply-prod` | `roles/iam.workloadIdentityUser` | - | Only `prod-apply` jobs (author-approved, `main` only). |
 | `principalSet://…prod…/attribute.gh_env/prod-deploy` | `sa:osp-deploy-prod` | `roles/iam.workloadIdentityUser` | - | Only `prod-deploy` jobs (author-approved, `main` only). |
 | `serviceAccount:osp-killswitch-prod@…` | `project:oss-pulse-<yyyy>` | `roles/billing.projectManager` | - | As in dev. |
+| `serviceAccount:osp-killswitch-prod@…` | `project:oss-pulse-<yyyy>` | `roles/browser` | - | As in dev. |
+| `serviceAccount:osp-killswitch-prod@…` | `billing-account:<billing-account-id>` | `roles/billing.viewer` | - | As in dev. |
+| `serviceAccount:osp-killswitch-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-killswitch-prod` | `roles/run.invoker` | - | As in dev. |
 
 **The all-powerful identity, stated plainly:** `osp-tf-apply-prod` has
 `editor` plus `iam.securityAdmin`. Together these are effectively Owner:
@@ -174,17 +205,24 @@ which only the author merges into.
   the bucket.
 - `osp-dashboard-prod` has nothing outside `osp_analytics_prod`.
 - **No identity reads `osp_slack_webhook_url` programmatically.**
-  - The alert notification channel's URL is set by hand, and Terraform
-    ignores changes to it, so the value never lands in Terraform state.
+  - The Slack notification channel is **created by hand, outside
+    Terraform**. Terraform receives only the channel's ID, as a plain
+    variable.
+  - Managing the channel in Terraform would copy the webhook URL into
+    Terraform state on every refresh, even with `ignore_changes`.
   - The Secret Manager entry is the author's record copy.
-- The **Compute Engine default service account's `editor` grant is
-  removed** at cutover. Cloud Build uses `osp-build-prod` instead.
+- The **Compute Engine default service account must not hold `editor`.**
+  It's removed at cutover, and Cloud Build uses `osp-build-prod` instead.
+  A grant that must be *absent* can't be a §4 row, so B11's diff script
+  checks it explicitly.
 
 **Confirmed during the build, then updated here:**
 - Whether `run.builder` alone covers everything `osp-build-prod` needs
   (Artifact Registry push, logs, source bucket read).
-- Whether `billing.projectManager` is enough for the kill switch to
-  unlink billing.
+- Whether the three kill-switch grants above suffice. Google's own
+  sample uses the much broader `billing.admin`.
+- That `gcloud run deploy --source` accepts the custom build identity
+  (`--build-service-account`) and its required logging setting.
 - The language-lookup job (data contract §5.7, option A), if chosen, adds
   one `secretAccessor` grant on `osp_github_token`.
 
@@ -196,7 +234,7 @@ disagree, §4 wins.
 | Resource | Write | Read |
 |---|---|---|
 | GCS `osp-raw-events-dev` | `osp-builder-dev` | `osp-builder-dev`; author |
-| BigQuery `osp_*_dev` | `osp-builder-dev` (owns them); per-PR CI datasets by `osp-ci-dev` | the same; `osp-ci-dev` reads `osp_raw_dev`; author |
+| BigQuery `osp_*_dev` | `osp-builder-dev`; per-PR CI datasets by `osp-ci-dev` | `osp-builder-dev`; `osp-ci-dev` (its own per-PR datasets); author |
 | GCS `osp-raw-events-prod` | `osp-ingest-prod` | `osp-ingest-prod`; author |
 | GCS `osp-terraform-state` | `osp-tf-apply-prod`; author | `osp-tf-plan-prod` |
 | BigQuery `osp_raw_prod` | `osp-ingest-prod` | `osp-dbt-prod`; author; `osp-tf-plan-prod` (via `viewer`) |
@@ -222,9 +260,10 @@ disagree, §4 wins.
 - **`pull_request_target` does get them, so it's banned.** The WIF provider
   condition rejects tokens from it, and a CI check (B11) will reject any
   workflow file that uses it.
-- **Fork workflows can't get a token anyway:** the provider condition also
-  requires this repository's numeric ID, so a fork, which has a different
-  ID, can't get a token at all.
+- **Workflows running inside a fork's own repository can't get a token:**
+  the provider condition requires this repository's numeric ID, and a fork
+  has a different one. (Fork *pull requests* run in this repository; the
+  `pull_request` rule above is what covers those.)
 
 ## 7. Change rules
 
@@ -242,4 +281,5 @@ disagree, §4 wins.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | Second review pass: `prod-plan` limited to protected branches; Slack channel kept out of Terraform; kill-switch grants completed (Browser, billing-account Viewer, invoker); builder and CI SAs moved to explicit `dataEditor` + `jobUser`; CI loads fixtures per run instead of reading expiring shared tables; Compute-default `editor` absence becomes a B11 check. |
 | 2026-11-11 | Initial version (backlog A8), per ADR 0002. Corrects `architecture.md` §7 in four places: dbt has no GCS access; the dashboard also needs `bigquery.jobUser`; the separate "reviewer" identity is dropped (the solo author is Owner, so it would add an identity without removing any access); and "no human developer access in prod" doesn't hold for a solo Owner. Adds a dedicated build identity, environment-gated prod CI identities, and kill-switch identities. |

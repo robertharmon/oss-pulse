@@ -54,7 +54,7 @@ Spending guards, applied to **both** projects:
 |---|---|---|
 | **Billing kill switch** (Google's documented "disable billing with notifications" pattern) | A budget publishes to Pub/Sub. A small Cloud Run function **unlinks billing** from the project when spend crosses the budget. Dev threshold: $2/month. Prod threshold: $5/month. | Hard, with a lag. Budget notifications arrive with some delay, so a small overshoot is possible. Unlinking shuts down every service in the project, and Google warns that resources *might be irretrievably deleted*, with no guaranteed recovery. Acceptable here because every dataset and file is re-derivable from GH Archive (§Consequences). |
 | **BigQuery custom query quota** | Rejects queries past a daily scan limit. Dev: 10 GB/day. Prod: 10 GB/day, plus a per-user quota on the dashboard identity so a leaked dashboard key can't starve dbt. | Hard |
-| **Dev default table expiration** | Every dev dataset auto-deletes tables 7 days after creation, so dev storage can't pile up. Test fixtures are reloaded on demand. | Hard (bounds storage) |
+| **Dev default table expiration** | Every author-created dev dataset auto-deletes tables 7 days after creation, and the dev bucket deletes objects after 7 days. Test fixtures are reloaded on demand. | Default, not hard: the builder could create a dataset without it. A B11 check flags any that do; the kill switch is the hard storage cap. |
 | **Agent identity scope** | The agent's identity can only use BigQuery and the dev bucket. It can't create resources in any other service (§2). | Hard (IAM) |
 | **Budget email alerts** at $1 and $5 | Early warning. | Soft. Email only. |
 
