@@ -9,17 +9,38 @@
 Dedicated Google account used only for this project (not personal Gmail).
 Separates billing, IAM, and audit trails from any real-identity account.
 
-Billing cap: **$0/month target.** Enforced by (1) Google billing alerts at $1
-and $5, (2) a BigQuery custom query quota of 10 GB scanned/day, (3)
-preferring serverless-and-free services (Cloud Scheduler, Cloud Run,
-Streamlit Community Cloud) over always-on VMs. If a specific learning
-exercise requires a paid resource (e.g., a Kestra VM for 2 weeks of
-orchestrator practice), it's an explicit, time-boxed decision logged as an
-ADR, not a drift.
+Billing cap: **$0/month target**, enforced on **both** projects
+([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md)). Only some of the mechanisms below actually
+*cap* spend. The others only notify:
 
-**Project ID:** `oss-pulse-<yyyy>` (locked at project creation, cannot
-change).
-**Project number:** recorded in `terraform/outputs.tf` after bootstrap.
+- **Hard caps:**
+  - **Billing kill switch.** A budget triggers a small Cloud Run function
+    that unlinks billing when spend crosses $2/month (dev) or $5/month
+    (prod). Notifications lag, so a small overshoot is possible. Unlinking
+    stops every service in the project, and Google warns that resources
+    might be irretrievably deleted. That's acceptable because all project
+    data is re-derivable from GH Archive.
+  - **BigQuery custom query quota** of 10 GB scanned/day per project
+    (queries only; it doesn't cap storage).
+  - **7-day default table expiration** on dev datasets, plus a 7-day
+    lifecycle-delete rule on the dev bucket, which bound dev storage.
+- **Notifications only:** Google budget email alerts (dev: $1 and $2;
+  prod: $1 and $5). **Budget alerts send email; they do not stop
+  spending.**
+- **Design choice:** prefer serverless-and-free services (Cloud Scheduler,
+  Cloud Run, Streamlit Community Cloud) over always-on VMs.
+
+If a specific learning exercise requires a paid resource (e.g., a Kestra
+VM for 2 weeks of orchestrator practice), it's an explicit, time-boxed
+decision logged as an ADR, not a drift.
+
+**Project IDs** (locked at project creation, cannot change):
+- `oss-pulse-dev-<yyyy>`: dev.
+- `oss-pulse-<yyyy>`: prod.
+
+Both are billed and capped as above. Both are created by the author,
+never by an agent.
+**Project numbers:** recorded in `terraform/outputs.tf` after bootstrap.
 
 ## 2. Region
 
@@ -35,19 +56,29 @@ reasons later demand it, that's a new ADR.
 
 ## 3. Environments
 
-Two environments only: `dev` and `prod`.
+Two environments only: `dev` and `prod`, **each in its own GCP project**
+([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md)).
 
-- `dev` — my working environment. Loose data, loose schedules, cheap.
-  Datasets suffixed `_dev`.
-- `prod` — the "running pipeline" environment. Scheduled by the
-  orchestrator. Datasets suffixed `_prod`.
+- `dev` lives in `oss-pulse-dev-<yyyy>`. It's the working environment
+  for the author and for agents. Loose data, loose schedules, capped
+  spend (§1). Agents reach it only through their own bot identity, which
+  can use BigQuery and the dev bucket and nothing else. Datasets suffixed
+  `_dev`.
+- `prod` lives in `oss-pulse-<yyyy>`. It's the "running pipeline"
+  environment, scheduled by the orchestrator. Datasets suffixed `_prod`.
+  Agents have no credentials for this project.
+
+Dataset suffixes stay even though the projects already separate the
+environments. A query aimed at the wrong project then fails with "dataset
+not found" instead of silently reading the other environment's data.
 
 No `staging`. For a solo project, three environments is theater — the
 dev/prod split alone exercises the right habit (don't develop against prod)
 without adding a tier that will go unused.
 
 Promotion from `dev` to `prod` happens through a PR merge, not a manual
-copy.
+copy. The one exception is prod's first bring-up (the cutover), which the
+author runs by hand from a runbook (ADR 0002 §6).
 
 ## 4. Naming conventions
 
@@ -57,7 +88,7 @@ vocabulary consistent.
 
 Specifics for oss-pulse:
 
-- **GCP project ID:** `oss-pulse-<yyyy>`
+- **GCP project IDs:** `oss-pulse-dev-<yyyy>` (dev), `oss-pulse-<yyyy>` (prod)
 - **GCS buckets:** `osp-<purpose>-<env>` — e.g. `osp-raw-events-dev`,
   `osp-terraform-state`
 - **BigQuery datasets:** `osp_<layer>_<env>` — e.g. `osp_raw_dev`,
@@ -227,3 +258,4 @@ Anything in this list requires its own ADR before scope changes.
 | 2026-10-05 | Initial version committed. | — |
 | 2026-10-05 | §9: added no-AI-assistant-attribution rule. | — |
 | 2026-10-06 | §10 added: no local Docker; deploy via `gcloud run --source`; `uv` for Python deps. Section 10 (scope boundaries) renumbered to §11. | — |
+| 2026-11-11 | §1: separated hard spend caps (billing kill switch, query quota, dev table expiration) from notification-only budget alerts. §1/§3/§4: dev and prod split into two billed, capped GCP projects; agents reach dev only, through their own bot identity. | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |

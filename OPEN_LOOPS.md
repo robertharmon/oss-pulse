@@ -28,8 +28,13 @@ Status markers:
 
 ## Decisions to revisit
 
-- (empty — add items here when something is tentatively decided but
-  deserves a second look after more context lands)
+- [ ] **Pick the milestone-promotion method before the first `build/agentic`
+  → `main` promotion.** Squash-merging a long-lived branch into `main`
+  twice makes git re-show already-merged changes (the second promotion
+  conflicts). Options: merge commits for milestone PRs (needs a DECISIONS
+  §9 note), or squash and then reset `build/agentic` to `main` after each
+  promotion. The author deferred this on 2026-11-11 ("stay on the branch
+  for now"). See ADR 0002 §4.
 
 ## Docs reconciliation
 

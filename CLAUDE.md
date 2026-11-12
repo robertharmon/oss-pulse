@@ -46,35 +46,50 @@ authoritative source if the two ever drift.
    item and work it.
 2. **`OPEN_LOOPS.md`** — small ad-hoc chores that aren't on the phased
    plan. Scan at the start of a session for cheap pickups.
-3. **`DECISIONS.md`** — locked operating decisions (GCP account,
+3. **`QUESTIONS.md`** — open questions waiting on the author. Check for
+   new answers before starting work.
+4. **`DECISIONS.md`** — locked operating decisions (GCP account,
    region, environments, naming, secrets, error handling, resource
    management, testing, branching, runtime/packaging, scope). Consult
    *before* suggesting anything that touches these.
-4. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
+5. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
    style, SQL style, PR titles, when to write comments). Points at
    DECISIONS.md for anything already locked there.
 
 ### Reference context (what the project is and how it fits together)
 
-5. **`README.md`** — one-pager repo intro: what oss-pulse is, what
+6. **`README.md`** — one-pager repo intro: what oss-pulse is, what
    questions it answers, current status, repo map.
-6. **`docs/architecture.md`** — target system architecture: ASCII
+7. **`docs/architecture.md`** — target system architecture: ASCII
    diagram, per-component responsibilities, end-to-end trace of one
    record, failure-boundary matrix, security-boundary summary.
-7. **Every ADR in `docs/adr/`** — architectural rationale. Read them
+8. **Every ADR in `docs/adr/`** — architectural rationale. Read them
    all, not just "the relevant one." `0001-tech-stack.md` is the stack
    foundation; later ADRs record subsequent decisions.
 
 ## Current phase
 
-**Foundation.** No pipeline code exists yet, by intention. Scaffolding,
-foundation docs, and cloud bootstrap come first (`FOUNDATION_BACKLOG.md`
-Phases A → B → C → D). The pipeline itself only begins once the
-foundation backlog is empty.
+**Agentic build-out** ([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md)).
+Agents build the project on the `build/agentic` integration branch against
+a capped dev GCP project, using their own bot identities. The author
+reviews milestone work and does the first prod bring-up (cutover) by hand.
 
-If asked to "start building the pipeline," check whether foundation is
-genuinely complete. If not, surface which items remain and recommend
-finishing those first.
+- **Order still matters:** finish the foundation docs (Phase A), then
+  scaffolding plus verifier tooling (Phase B, including B11), before
+  pipeline code.
+- **Cloud-dependent items** (Phases C and D) wait until the author has
+  created the accounts in [`docs/author_setup.md`](docs/author_setup.md).
+  Pipeline building doesn't wait for prod; it proceeds against the dev
+  project.
+- **Agent hard limits:**
+  - Never create accounts or projects.
+  - Never touch billing.
+  - Never *run* IAM changes (writing Terraform IAM code for review is
+    fine).
+  - Never run anything against the prod project.
+  - Never edit `.claude/settings.json` permission rules.
+- **Blocking questions** go in `QUESTIONS.md`. Keep working on unblocked
+  items while they wait.
 
 ## Workflow conventions (reflex)
 
@@ -83,6 +98,8 @@ Pulled from `DECISIONS.md` §9 — treat as muscle memory:
 - Every change is a **feature branch → PR → squash merge → delete branch**.
   No direct pushes to `main` — the `protect-main` GitHub ruleset enforces
   this (verified via smoke test).
+- **During the agentic build-out:** feature branches start from, and PRs
+  target, `build/agentic`, not `main`. Only milestone PRs target `main`.
 - **Branch names:** `type/short-slug` — e.g. `docs/adr-0005-schema`,
   `feat/hourly-ingest`, `fix/sqlfluff-trailing-comma`,
   `chore/add-make-targets`.
