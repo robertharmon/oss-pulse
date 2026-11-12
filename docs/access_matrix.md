@@ -158,7 +158,7 @@ Condition):
 |---|---|---|---|---|
 | `user:<author-email>` | `project:oss-pulse-<yyyy>` | `roles/owner` | - | Solo project. Unavoidable. |
 | `serviceAccount:osp-ingest-prod@…` | `bucket:osp-raw-events-prod` | `roles/storage.objectUser` | - | Write each hour's Parquet. Needs delete as well as create, because re-ingesting an hour overwrites its file. |
-| `serviceAccount:osp-ingest-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataEditor` | - | Load jobs append to `raw_gharchive_events` and write `raw_ingest_audit`. |
+| `serviceAccount:osp-ingest-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataEditor` | - | Load jobs write each hour's partition of `raw_gharchive_events` (overwriting it on replay) and write `raw_ingest_audit`. |
 | `serviceAccount:osp-ingest-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | Load jobs are BigQuery jobs. |
 | `serviceAccount:osp-ingest-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | Ingest triggers the dbt build when its load finishes. |
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataViewer` | - | Read raw. Never writes it. |
