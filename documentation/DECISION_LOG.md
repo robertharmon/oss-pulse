@@ -1,6 +1,6 @@
 # Decision Log
 
-> **3 sessions**, most recent 2026-10-06. A session-indexed history of
+> **4 sessions**, most recent 2026-11-11. A session-indexed history of
 > the project organized by subsystem. Each entry summarizes the
 > motivating question and the outcome — read the linked session doc for
 > full detail.
@@ -12,6 +12,7 @@
 | 01 | 2026-10-05 | [Initial Bootstrap and Foundation Documents](Session01_20261005_initial_bootstrap_and_foundation_docs.md) | Foundation & Governance |
 | 02 | 2026-10-05 | [A5 Architecture Doc and Session-01 Docs Rescue](Session02_20261005_a5_architecture_doc.md) | Foundation & Governance |
 | 03 | 2026-10-06 | [A6 CONVENTIONS.md and the No-Local-Docker Decision](Session03_20261006_a6_conventions_and_no_local_docker.md) | Foundation & Governance |
+| 04 | 2026-11-11 | [Agentic Build-Out Setup, A7–A9, and the GH Archive URL Fix](Session04_20261111_agentic_build_out_setup.md) | Foundation & Governance / Infrastructure & Cloud |
 
 ---
 
@@ -71,12 +72,31 @@ CLAUDE.md, ADRs, session docs.
   for a human-on-laptop workflow, not fine-grained PATs. Backlog:
   8/14 Phase A complete.
 
+- **S04** `current` — How can agents finish the build safely while the author has little time?
+  Locked ADR 0002: agents work on a `build/agentic` integration branch
+  (baseline tag `baseline-pre-agentic` on `main`), test-first with seven
+  verifier types, using their own bot identities, against a billed dev
+  project with hard caps (billing kill switch, query quota, table
+  expiry). Independent review agents caught 5 blockers across 4 PRs
+  before merge, including that the first-choice no-billing sandbox
+  can't run dbt incremental models and that agents had been running
+  with the author's credentials. Closed A7 (data contract), A8 (access
+  matrix) and A9 (runbook); found that GH Archive URLs use an unpadded
+  hour, which turned the contract's ~35% missing-hour rate into 72/72
+  present. Backlog: 10/14 Phase A.
+
 ## Subsystem: Infrastructure & Cloud
 
 Terraform, GCP resources, networking, IAM, Secret Manager, remote
 state.
 
-- *(no entries yet)*
+- **S04** `design-only` — Who and what may touch each GCP resource, and how is spend capped?
+  Two billed projects (dev, prod) each with a billing kill switch,
+  10 GB/day query quota and budget alerts; a canonical IAM bindings
+  table (`docs/access_matrix.md`) built to be diffed against Terraform,
+  with prod CI identities gated by author-approved GitHub Environments
+  and WIF pinned to the repo's numeric ID. Rejected the BigQuery
+  no-billing sandbox (no DML, 10 GiB lifetime storage, 60-day expiry).
 
 ## Subsystem: Data Ingestion
 
@@ -101,34 +121,37 @@ Scheduling, retries, alerting, dashboards, consumer layer.
 
 ## Current Outlook
 
-**Where we are:** Foundation phase, Session 03 complete. The repo
-exists publicly at `github.com/robertharmon/oss-pulse` with a verified
-PR-only workflow, nine merged PRs, the first ADR committing to the
-BigQuery + dbt + serverless-GCP stack ($0/month target), the
-architecture doc describing how the ADR's pieces fit together, a
-code-and-docs conventions file (`CONVENTIONS.md`), and a
-no-local-Docker operating decision in `DECISIONS.md` §10. `gh` CLI
-is operational for terminal-opened PRs. No cloud resources exist
-yet. No pipeline code exists yet.
+**Where we are:** Agentic build-out, milestone 1 (remaining foundation
+docs), after **S04**.
+- `main` is tagged `baseline-pre-agentic`. All agent work lands on
+  `build/agentic` through reviewed PRs.
+- ADR 0002 sets the operating model: bot identities, a billed-but-capped
+  dev project, and test-first development plus verifiers.
+- Phase A is 10/14 complete.
+- No cloud resources and no pipeline code exist yet.
 
 **What's open:**
+- **Author actions** (`docs/author_setup.md`, in order):
+  1. branch rules (`main` requires approval; protect `build/agentic`);
+  2. answer `QUESTIONS.md` Q1 (commit attribution under a bot);
+  3. the bot accounts;
+  4. the dev project and kill switch.
+- **Milestone 1 remaining:**
+  - A11 cost model (in progress; retention must replace "keep forever");
+  - A12 security posture;
+  - A13 ways of working;
+  - A10 roadmap (folds in the A10 inputs list);
+  - contract additions (failure-mode IDs, `raw_ingest_audit`,
+    reconciliation and metamorphic sections).
+- **Deferred:** the milestone-promotion method (OPEN_LOOPS), decided
+  before the first promotion to `main`.
 
-- Six remaining Phase A documents (A7 data contract, A8 access
-  matrix, A9 runbook, A10 90-day roadmap, A11 budget/cost model,
-  A12 security posture, A13 solo ways-of-working — a few of these
-  may rightly merge or be deferred pending reality).
-- All of Phase B except B7 (branch protection) and B10 (ADR template).
-- All of Phase C (cloud bootstrap).
-- All of Phase D (walking-skeleton smoke test).
+**What's next:** Finish A11, then milestone 2: scaffolding plus verifier
+tooling (B1–B6, B8, B9, B11), once the bot identities exist.
 
-**What's next:** **A7 — Data contract.** Upstream sources (GH Archive)
-with known SLAs and failure modes, output tables (grain, freshness,
-columns), downstream consumers, column add/deprecate rule. The mart
-list in `docs/architecture.md` §4 is the authoritative source for
-which marts the contract needs to describe.
-
-**Review triggers for the current stack decision (ADR 0001):**
-- Any month with cloud spend above $5 for three consecutive months
-- Role change for the author
-- Major deprecation or free-tier removal at a chosen service
-- 2027-04-05 as a scheduled checkpoint
+**Review triggers:**
+- **ADR 0001:** spend over $5 for 3 consecutive months; a role change;
+  deprecation or free-tier removal of a chosen service; the 2027-04-05
+  checkpoint.
+- **ADR 0002:** the kill switch fires; an agent PR weakens a check; the
+  author's review queue becomes the bottleneck; cutover.
