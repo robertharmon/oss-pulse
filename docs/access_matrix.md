@@ -1,180 +1,245 @@
 # oss-pulse — Access Matrix
 
 > Who and what can read or write each project, dataset, bucket, secret,
-> service and the Terraform state. Even for a solo project, this table
-> defines the service accounts and their roles.
+> service, and the Terraform state. Even for a solo project, this defines
+> the service accounts and their roles.
 >
 > **This file is the authority. Terraform implements it exactly.** The
-> [Bindings](#3-bindings-the-canonical-table) table is machine-checked: a
-> CI script diffs it against the IAM bindings declared in `terraform/`,
-> and any drift in either direction fails the build. To change access,
-> change this table and the Terraform in the same PR.
+> [bindings table](#4-bindings-the-canonical-table) is designed to be
+> machine-checked. Backlog B11 adds a CI script that diffs it against the
+> IAM resources in `terraform/` and fails the build on drift in either
+> direction. To change access, change this table and the Terraform in the
+> same PR.
 >
-> Environments and the two-project split come from
-> [ADR 0002](adr/0002-agentic-build-out-and-sandbox-dev.md): dev lives in
-> `oss-pulse-dev-<yyyy>` (no billing), prod in `oss-pulse-<yyyy>` (billed).
+> Environments, agent identities and spending caps come from
+> [ADR 0002](adr/0002-agentic-build-out-and-isolated-dev.md):
+> - dev lives in `oss-pulse-dev-<yyyy>`, prod in `oss-pulse-<yyyy>`;
+> - both are billed and hard-capped;
+> - agents reach dev only, through their own bot identity.
 
 ---
 
 ## 1. Principles
 
 - **Least privilege, scoped as narrowly as the resource allows.** Grant on
-  the dataset, bucket, secret or service, not the project, unless the
-  permission only exists at project level (e.g. running BigQuery jobs).
-- **One service account per job, per environment.** If a job is
-  compromised or buggy, it can only reach what that one job needs.
-- **No service-account key files**, with one documented exception
-  (§5).
+  the dataset, bucket, secret, service or service account, not the
+  project, unless the permission only exists at project level (e.g.
+  running BigQuery jobs).
+- **One service account per job, per environment.** A buggy or
+  compromised job can only reach what that job needs.
+- **No service-account key files**, with one documented exception (§6).
   - Cloud Run services use their attached identity.
   - GitHub Actions uses Workload Identity Federation (short-lived tokens).
-  - The author and the build agent use impersonation.
-- **Agents never hold a credential for the prod project.**
-- **Writers are not readers by default.** Each grant states why it exists.
+  - The agent's bot account can only mint tokens for one dev service
+    account.
+- **No credential on the agent's machine reaches prod, billing, or IAM.**
+- **Every grant states why it exists.**
+- **Be honest about all-powerful identities.** Where an identity is
+  effectively Owner, say so, and say what actually guards it.
 
 ## 2. Principals
 
-| Principal | Kind | Env | Used by |
+Member strings are written exactly as they'll appear in Terraform.
+`<author-email>`, `<bot-email>`, `<yyyy>`, `<pool>` and `<prod-project-number>`
+are filled in at setup. The GitHub repository is pinned by its immutable
+numeric ID, `1406578436` (owner ID `1310922`), not its name.
+
+| Principal | Member string | Env | Used by |
 |---|---|---|---|
-| Author (`user:` the author's dedicated Google account) | Human | dev, prod | The author, day to day, through `gcloud auth application-default login` |
-| `osp-builder-dev` | Service account | dev | The AI build agent, through impersonation by the author's login |
-| `osp-ci-dev` | Service account | dev | GitHub Actions PR checks that need real BigQuery (WIF) |
-| `osp-ingest-<env>` | Service account | dev (identity only), prod | Cloud Run ingest service runtime |
-| `osp-dbt-<env>` | Service account | dev (identity only), prod | Cloud Run dbt service runtime |
-| `osp-scheduler-<env>` | Service account | prod | Cloud Scheduler, to invoke the ingest service |
-| `osp-dashboard-<env>` | Service account | prod | Streamlit Community Cloud app |
-| `osp-tf-plan-prod` | Service account | prod | GitHub Actions `terraform plan` on PRs (WIF, any branch of this repo) |
-| `osp-tf-apply-prod` | Service account | prod | GitHub Actions `terraform apply` on merge (WIF, `main` only) |
-| `osp-deploy-prod` | Service account | prod | GitHub Actions deploy of Cloud Run services on merge (WIF, `main` only) |
+| Author | `user:<author-email>` | dev, prod | The author, from the Console, Cloud Shell, or the cutover session |
+| Bot Google account | `user:<bot-email>` | dev | The AI build agent's `gcloud` login. Its only grant is minting tokens for `osp-builder-dev`. |
+| Build agent SA | `serviceAccount:osp-builder-dev@oss-pulse-dev-<yyyy>.iam.gserviceaccount.com` | dev | What the agent actually acts as |
+| Dev CI SA | `serviceAccount:osp-ci-dev@oss-pulse-dev-<yyyy>.iam.gserviceaccount.com` | dev | GitHub Actions PR checks that need real BigQuery |
+| Ingest SA | `serviceAccount:osp-ingest-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run ingest service runtime |
+| dbt SA | `serviceAccount:osp-dbt-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run dbt service runtime |
+| Scheduler SA | `serviceAccount:osp-scheduler-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Scheduler's identity when invoking ingest |
+| Dashboard SA | `serviceAccount:osp-dashboard-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Streamlit Community Cloud app |
+| Build SA | `serviceAccount:osp-build-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Build when building the services from source |
+| Terraform plan SA | `serviceAccount:osp-tf-plan-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | `terraform plan` in the `prod-plan` GitHub Environment |
+| Terraform apply SA | `serviceAccount:osp-tf-apply-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | `terraform apply` in the `prod-apply` GitHub Environment |
+| Deploy SA | `serviceAccount:osp-deploy-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Service deploys in the `prod-deploy` GitHub Environment |
+| Kill-switch SA | `serviceAccount:osp-killswitch-<env>@<project>.iam.gserviceaccount.com` | dev, prod | The billing kill-switch function (DECISIONS §1) |
 
-**dev (identity only):** the dev project has no billing, so Cloud Run and
-GCS can't run there (see §6). The `-dev` runtime identities still exist so
-Terraform's dev and prod configurations stay the same shape. They hold no
-grants in dev.
+### GitHub identities (WIF principal sets)
 
-## 3. Bindings (the canonical table)
+A workload identity pool in each project trusts GitHub's OIDC issuer.
+- **Provider attribute condition**, which every token must pass:
+  `assertion.repository_id == '1406578436' && assertion.event_name != 'pull_request_target'`.
+- **Mapped attributes:**
+  `attribute.repository_id = assertion.repository_id` and
+  `attribute.gh_env = assertion.environment` (empty when a job has no
+  environment).
 
-Column meanings:
-- **Scope** is where the grant is attached:
-  - `project`;
-  - `dataset:<name>`;
+| Principal set | Member string | Matches |
+|---|---|---|
+| Any workflow in this repo (dev pool) | `principalSet://iam.googleapis.com/projects/<dev-project-number>/locations/global/workloadIdentityPools/<pool>/attribute.repository_id/1406578436` | Any branch, including agent branches. Fine, because it only unlocks `osp-ci-dev`. |
+| `prod-plan` environment | `principalSet://iam.googleapis.com/projects/<prod-project-number>/locations/global/workloadIdentityPools/<pool>/attribute.gh_env/prod-plan` | Jobs using GitHub Environment `prod-plan` |
+| `prod-apply` environment | `principalSet://…/attribute.gh_env/prod-apply` | Jobs using GitHub Environment `prod-apply` |
+| `prod-deploy` environment | `principalSet://…/attribute.gh_env/prod-deploy` | Jobs using GitHub Environment `prod-deploy` |
+
+**GitHub Environment protection** is configured by the author and is what
+actually guards prod:
+- **`prod-plan`:** the author is a required reviewer. A job can only get a
+  prod-plan token after the author approves that run. An agent branch
+  can't trigger it alone.
+- **`prod-apply` / `prod-deploy`:** the author is a required reviewer,
+  **and** deployment is limited to the `main` branch.
+
+The bot has write access but not admin, so it can't change these settings.
+
+## 3. What "dev" hosts
+
+The dev project is billed but capped (DECISIONS §1).
+- **The agent can only use BigQuery and one bucket**, `osp-raw-events-dev`,
+  so that's all dev hosts during the build.
+- Cloud Run, Scheduler, Secret Manager and alerting are prod-only until
+  cutover. The `-dev` runtime identities aren't created.
+- **Dev Terraform state** is local and disposable, kept out of git by
+  `.gitignore`. Dev holds nothing worth a state bucket.
+
+## 4. Bindings (the canonical table)
+
+One row per real binding. The diff script compares (Member, Scope, Role,
+Condition):
+- **Scope** is one of:
+  - `project:<id>`;
+  - `dataset:<project>.<dataset>`;
   - `bucket:<name>`;
-  - `secret:<name>`;
-  - `service:<cloud-run-service>`;
-  - `sa:<service-account>` (a grant *on* a service account, letting the
-    member act as it).
-- `<env>` rows exist once per environment listed in **Env**.
+  - `secret:<project>/<name>`;
+  - `run-service:<project>/us-central1/<name>`;
+  - `sa:<email-local-part>` (a grant *on* that service account, letting the
+    member act as it, in the project its row names).
+- **Condition** is `-` when there is none.
 
-| Member | Scope | Role | Env | Why |
+### 4.1 Dev (`oss-pulse-dev-<yyyy>`)
+
+| Member | Scope | Role | Condition | Why |
 |---|---|---|---|---|
-| Author | `project` | `roles/owner` | dev, prod | Solo project; someone must own it. Unavoidable. |
-| Author | `sa:osp-builder-dev` | `roles/iam.serviceAccountTokenCreator` | dev | Lets the author's login mint short-lived tokens for the build agent. Explicit, so the agent path doesn't depend on what `owner` happens to include. |
-| `osp-builder-dev` | `project` | `roles/bigquery.user` | dev | Run queries and create the agent's own scratch datasets. |
-| `osp-builder-dev` | `dataset:osp_raw_dev` | `roles/bigquery.dataEditor` | dev | Load test data into raw. |
-| `osp-builder-dev` | `dataset:osp_staging_dev` | `roles/bigquery.dataEditor` | dev | Build staging models. |
-| `osp-builder-dev` | `dataset:osp_analytics_dev` | `roles/bigquery.dataEditor` | dev | Build marts. |
-| `osp-ci-dev` | `project` | `roles/bigquery.user` | dev | Run per-PR builds in throwaway datasets that CI creates and deletes. |
-| `osp-ci-dev` | `sa:osp-ci-dev` | `roles/iam.workloadIdentityUser` → GitHub principal set, repo `robertharmon/oss-pulse` | dev | WIF: only workflows from this repo can act as the CI identity. |
-| `osp-ingest-<env>` | `bucket:osp-raw-events-<env>` | `roles/storage.objectUser` | prod | Write each hour's Parquet. Needs delete as well as create, because re-ingesting an hour overwrites its file (the pipeline is idempotent on hour). |
-| `osp-ingest-<env>` | `dataset:osp_raw_<env>` | `roles/bigquery.dataEditor` | prod | Load jobs append to `raw_gharchive_events` and write `raw_ingest_audit`. |
-| `osp-ingest-<env>` | `project` | `roles/bigquery.jobUser` | prod | Load jobs are BigQuery jobs. |
-| `osp-ingest-<env>` | `service:osp-dbt-<env>` | `roles/run.invoker` | prod | Ingest triggers the dbt build when its load finishes. |
-| `osp-dbt-<env>` | `dataset:osp_raw_<env>` | `roles/bigquery.dataViewer` | prod | Read raw. Never writes it. |
-| `osp-dbt-<env>` | `dataset:osp_staging_<env>` | `roles/bigquery.dataEditor` | prod | Build staging models. |
-| `osp-dbt-<env>` | `dataset:osp_analytics_<env>` | `roles/bigquery.dataEditor` | prod | Build facts, dimensions and marts. |
-| `osp-dbt-<env>` | `project` | `roles/bigquery.jobUser` | prod | dbt runs queries. |
-| `osp-scheduler-<env>` | `service:osp-ingest-<env>` | `roles/run.invoker` | prod | The hourly trigger. Nothing else. |
-| `osp-dashboard-<env>` | `dataset:osp_analytics_<env>` | `roles/bigquery.dataViewer` | prod | Read marts only. Cannot see raw or staging. |
-| `osp-dashboard-<env>` | `project` | `roles/bigquery.jobUser` | prod | A `SELECT` is a query job. Without this, read access alone can't run a query. |
-| `osp-tf-plan-prod` | `project` | `roles/viewer` | prod | `terraform plan` reads current state of every resource. |
-| `osp-tf-plan-prod` | `project` | `roles/iam.securityReviewer` | prod | Plan must read IAM policies to diff them; `viewer` doesn't include that. |
-| `osp-tf-plan-prod` | `bucket:osp-terraform-state` | `roles/storage.objectViewer` | prod | Read state. Plan runs with `-lock=false`, so it never writes. |
-| `osp-tf-plan-prod` | `sa:osp-tf-plan-prod` | `roles/iam.workloadIdentityUser` → GitHub principal set, repo `robertharmon/oss-pulse` | prod | WIF for PR plans. |
-| `osp-tf-apply-prod` | `project` | `roles/editor` | prod | Create and change resources. |
-| `osp-tf-apply-prod` | `project` | `roles/resourcemanager.projectIamAdmin` | prod | Apply the bindings in this table. `editor` can't change IAM. |
-| `osp-tf-apply-prod` | `bucket:osp-terraform-state` | `roles/storage.objectAdmin` | prod | Read, write and lock state. |
-| `osp-tf-apply-prod` | `secret:osp_slack_webhook_url` | `roles/secretmanager.secretAccessor` | prod | Read the webhook URL when creating the alert notification channel. |
-| `osp-tf-apply-prod` | `sa:osp-tf-apply-prod` | `roles/iam.workloadIdentityUser` → GitHub principal set, repo `robertharmon/oss-pulse`, ref `refs/heads/main` | prod | WIF, restricted to the protected `main` branch. A PR branch can't apply. |
-| `osp-deploy-prod` | `project` | `roles/run.developer` | prod | Deploy new revisions of the two Cloud Run services. |
-| `osp-deploy-prod` | `project` | `roles/cloudbuild.builds.editor` | prod | `gcloud run deploy --source` builds the image in Cloud Build (DECISIONS §10). |
-| `osp-deploy-prod` | `sa:osp-ingest-prod` | `roles/iam.serviceAccountUser` | prod | Deploy a service that runs *as* the ingest identity. |
-| `osp-deploy-prod` | `sa:osp-dbt-prod` | `roles/iam.serviceAccountUser` | prod | Same, for the dbt service. |
-| `osp-deploy-prod` | `sa:osp-deploy-prod` | `roles/iam.workloadIdentityUser` → GitHub principal set, repo `robertharmon/oss-pulse`, ref `refs/heads/main` | prod | WIF, `main` only. |
+| `user:<author-email>` | `project:oss-pulse-dev-<yyyy>` | `roles/owner` | - | Someone must own it. |
+| `user:<bot-email>` | `sa:osp-builder-dev` | `roles/iam.serviceAccountTokenCreator` | - | The bot's only power: minting short-lived tokens for the build SA. No project role at all. |
+| `serviceAccount:osp-builder-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.user` | - | Run queries and create datasets. It owns the datasets it creates, so no per-dataset grants are needed. |
+| `serviceAccount:osp-builder-dev@…` | `bucket:osp-raw-events-dev` | `roles/storage.objectUser` | - | Test the ingest GCS step for real. Read, write, overwrite. |
+| `serviceAccount:osp-ci-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/bigquery.user` | - | Per-PR builds in throwaway datasets CI creates and deletes. |
+| `serviceAccount:osp-ci-dev@…` | `dataset:oss-pulse-dev-<yyyy>.osp_raw_dev` | `roles/bigquery.dataViewer` | - | Per-PR dbt builds read the shared raw fixtures as their source. |
+| `principalSet://…dev…/attribute.repository_id/1406578436` | `sa:osp-ci-dev` | `roles/iam.workloadIdentityUser` | - | Any workflow in this repo may act as dev CI. Dev only. |
+| `serviceAccount:osp-killswitch-dev@…` | `project:oss-pulse-dev-<yyyy>` | `roles/billing.projectManager` | - | Unlink billing when the budget is crossed. If Google requires a billing-account-level role instead, record it here at setup (ADR 0002 §1). |
+
+### 4.2 Prod (`oss-pulse-<yyyy>`)
+
+| Member | Scope | Role | Condition | Why |
+|---|---|---|---|---|
+| `user:<author-email>` | `project:oss-pulse-<yyyy>` | `roles/owner` | - | Solo project. Unavoidable. |
+| `serviceAccount:osp-ingest-prod@…` | `bucket:osp-raw-events-prod` | `roles/storage.objectUser` | - | Write each hour's Parquet. Needs delete as well as create, because re-ingesting an hour overwrites its file. |
+| `serviceAccount:osp-ingest-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataEditor` | - | Load jobs append to `raw_gharchive_events` and write `raw_ingest_audit`. |
+| `serviceAccount:osp-ingest-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | Load jobs are BigQuery jobs. |
+| `serviceAccount:osp-ingest-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | Ingest triggers the dbt build when its load finishes. |
+| `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataViewer` | - | Read raw. Never writes it. |
+| `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_staging_prod` | `roles/bigquery.dataEditor` | - | Build staging models. |
+| `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataEditor` | - | Build facts, dimensions and marts. |
+| `serviceAccount:osp-dbt-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | dbt runs queries. |
+| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly trigger. Nothing else. |
+| `serviceAccount:osp-dashboard-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataViewer` | - | Read marts only. Can't see raw or staging. |
+| `serviceAccount:osp-dashboard-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | A `SELECT` is a query job; read access alone can't run one. A per-user query quota caps this identity (§6). |
+| `serviceAccount:osp-build-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.builder` | - | Cloud Build runs as this identity to build images from source. Replaces the Compute Engine default service account, which gets broad `editor` by default. |
+| `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.sourceDeveloper` | - | `gcloud run deploy --source` (DECISIONS §10). |
+| `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/serviceusage.serviceUsageConsumer` | - | Required alongside `run.sourceDeveloper` for source deploys. |
+| `serviceAccount:osp-deploy-prod@…` | `sa:osp-ingest-prod` | `roles/iam.serviceAccountUser` | - | Deploy a service that runs *as* the ingest identity. |
+| `serviceAccount:osp-deploy-prod@…` | `sa:osp-dbt-prod` | `roles/iam.serviceAccountUser` | - | Same, for dbt. |
+| `serviceAccount:osp-deploy-prod@…` | `sa:osp-build-prod` | `roles/iam.serviceAccountUser` | - | Submit builds that run as the build identity. |
+| `serviceAccount:osp-tf-plan-prod@…` | `project:oss-pulse-<yyyy>` | `roles/viewer` | - | `plan` reads every resource's current state. Note that `viewer` includes reading BigQuery data, which is why this identity sits behind the `prod-plan` environment. |
+| `serviceAccount:osp-tf-plan-prod@…` | `project:oss-pulse-<yyyy>` | `roles/iam.securityReviewer` | - | `plan` must read IAM policies to diff them; `viewer` doesn't include that. |
+| `serviceAccount:osp-tf-plan-prod@…` | `bucket:osp-terraform-state` | `roles/storage.objectViewer` | - | Read state. Plan runs with `-lock=false`, so it never writes. |
+| `serviceAccount:osp-tf-apply-prod@…` | `project:oss-pulse-<yyyy>` | `roles/editor` | - | Create and change resources. |
+| `serviceAccount:osp-tf-apply-prod@…` | `project:oss-pulse-<yyyy>` | `roles/iam.securityAdmin` | - | Get and set IAM policy on any resource (bucket, dataset, service, service account), which the per-resource rows above require. |
+| `serviceAccount:osp-tf-apply-prod@…` | `bucket:osp-terraform-state` | `roles/storage.objectAdmin` | - | Read, write and lock state. |
+| `principalSet://…prod…/attribute.gh_env/prod-plan` | `sa:osp-tf-plan-prod` | `roles/iam.workloadIdentityUser` | - | Only `prod-plan` jobs (author-approved) can act as the plan identity. |
+| `principalSet://…prod…/attribute.gh_env/prod-apply` | `sa:osp-tf-apply-prod` | `roles/iam.workloadIdentityUser` | - | Only `prod-apply` jobs (author-approved, `main` only). |
+| `principalSet://…prod…/attribute.gh_env/prod-deploy` | `sa:osp-deploy-prod` | `roles/iam.workloadIdentityUser` | - | Only `prod-deploy` jobs (author-approved, `main` only). |
+| `serviceAccount:osp-killswitch-prod@…` | `project:oss-pulse-<yyyy>` | `roles/billing.projectManager` | - | As in dev. |
+
+**The all-powerful identity, stated plainly:** `osp-tf-apply-prod` has
+`editor` plus `iam.securityAdmin`. Together these are effectively Owner:
+it can act as any service account and grant itself anything. Terraform
+needs this to manage IAM. **Nothing in IAM narrows it.** What guards it is
+outside IAM: its token is only issued to jobs in the `prod-apply`
+environment, which needs the author's approval and only runs from `main`,
+which only the author merges into.
 
 **Not granted, on purpose:**
-- Nobody but the author has `owner`, billing roles, or the ability to
-  create projects.
-- `osp-builder-dev` and `osp-ci-dev` have nothing in prod. They also have no
-  IAM, Storage, Secret Manager or Cloud Run roles in dev.
-- `osp-dbt-<env>` has no GCS access. dbt reads raw from BigQuery, never
-  from the bucket. (`architecture.md` §7 says the dbt identity reads the
-  bucket; that's corrected here.)
-- `osp-dashboard-<env>` has nothing outside `osp_analytics_<env>`.
+- Nobody but the author has `owner` or billing roles. Nobody but the author
+  and the kill-switch identities can touch billing.
+- The bot account and `osp-builder-dev` have nothing in prod, and no IAM,
+  Secret Manager or Cloud Run roles anywhere.
+- `osp-dbt-prod` has no GCS access. dbt reads raw from BigQuery, never from
+  the bucket.
+- `osp-dashboard-prod` has nothing outside `osp_analytics_prod`.
+- **No identity reads `osp_slack_webhook_url` programmatically.**
+  - The alert notification channel's URL is set by hand, and Terraform
+    ignores changes to it, so the value never lands in Terraform state.
+  - The Secret Manager entry is the author's record copy.
+- The **Compute Engine default service account's `editor` grant is
+  removed** at cutover. Cloud Build uses `osp-build-prod` instead.
 
-**To be confirmed during the build:**
-- Cloud Build's deploy path (`--source`) also uploads source to a staging
-  bucket and pushes to Artifact Registry using Cloud Build's own service
-  account. The exact extra roles `osp-deploy-prod` needs are confirmed in
-  the deploy-workflow PR, and this table is updated in the same PR.
-- **The language-lookup job** (data contract §5.7, option A) would add one
-  `secretAccessor` grant on `osp_github_token` for whichever identity runs
-  it. Added when that option is chosen.
+**Confirmed during the build, then updated here:**
+- Whether `run.builder` alone covers everything `osp-build-prod` needs
+  (Artifact Registry push, logs, source bucket read).
+- Whether `billing.projectManager` is enough for the kill switch to
+  unlink billing.
+- The language-lookup job (data contract §5.7, option A), if chosen, adds
+  one `secretAccessor` grant on `osp_github_token`.
 
-## 4. Resource view
+## 5. Resource view
 
-The same grants, read by resource. Useful when the question is "who can
-touch X?". If this view and §3 ever disagree, §3 wins.
+The same grants, read by resource ("who can touch X?"). If this and §4
+disagree, §4 wins.
 
-| Resource | Env | Write | Read |
-|---|---|---|---|
-| GCS `osp-raw-events-prod` | prod | `osp-ingest-prod` | `osp-ingest-prod`; author |
-| GCS `osp-terraform-state` | prod | `osp-tf-apply-prod`; author | `osp-tf-plan-prod` |
-| BigQuery `osp_raw_<env>` | dev | `osp-builder-dev`; per-PR CI datasets are separate | author; `osp-builder-dev` |
-| BigQuery `osp_raw_<env>` | prod | `osp-ingest-prod` | `osp-dbt-prod`; author |
-| BigQuery `osp_staging_<env>` | dev | `osp-builder-dev` | same |
-| BigQuery `osp_staging_<env>` | prod | `osp-dbt-prod` | author |
-| BigQuery `osp_analytics_<env>` | dev | `osp-builder-dev` | same |
-| BigQuery `osp_analytics_<env>` | prod | `osp-dbt-prod` | `osp-dashboard-prod`; author |
-| Secret `osp_slack_webhook_url` | prod | author (sets the value by hand) | `osp-tf-apply-prod` |
-| Cloud Run `osp-ingest-prod` | prod | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
-| Cloud Run `osp-dbt-prod` | prod | `osp-deploy-prod` (deploys) | invoked by `osp-ingest-prod` |
+| Resource | Write | Read |
+|---|---|---|
+| GCS `osp-raw-events-dev` | `osp-builder-dev` | `osp-builder-dev`; author |
+| BigQuery `osp_*_dev` | `osp-builder-dev` (owns them); per-PR CI datasets by `osp-ci-dev` | the same; `osp-ci-dev` reads `osp_raw_dev`; author |
+| GCS `osp-raw-events-prod` | `osp-ingest-prod` | `osp-ingest-prod`; author |
+| GCS `osp-terraform-state` | `osp-tf-apply-prod`; author | `osp-tf-plan-prod` |
+| BigQuery `osp_raw_prod` | `osp-ingest-prod` | `osp-dbt-prod`; author; `osp-tf-plan-prod` (via `viewer`) |
+| BigQuery `osp_staging_prod` | `osp-dbt-prod` | author; `osp-tf-plan-prod` (via `viewer`) |
+| BigQuery `osp_analytics_prod` | `osp-dbt-prod` | `osp-dashboard-prod`; author; `osp-tf-plan-prod` (via `viewer`) |
+| Secret `osp_slack_webhook_url` | author | author |
+| Cloud Run `osp-ingest-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
+| Cloud Run `osp-dbt-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-ingest-prod` |
 
-## 5. Credentials outside GCP
+## 6. Credentials and controls outside IAM
 
-| Credential | Lives in | Used by | Notes |
-|---|---|---|---|
-| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | The dashboard | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation, so it needs a key. Scoped to read-only on marts (§3). Rotation schedule lives in `docs/security.md`. Never stored in the repo or on the laptop beyond the moment of pasting it in. |
-| Slack webhook URL for CI alerts | GitHub Actions secret `SLACK_WEBHOOK_URL` | CI failure notifications | Same webhook as the Secret Manager copy. Allowed by DECISIONS §5 (CI reads secrets from GitHub Actions secrets). |
-| WIF provider and service-account emails | GitHub Actions variables (not secrets) | CI workflows | Identifiers, not credentials. A token is only issued to workflows that match the provider's repo and branch condition. |
+| Item | Lives in | Notes |
+|---|---|---|
+| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation. Scoped to read-only on marts, with a **per-user BigQuery query quota** so a leaked key can't use up the project's 10 GB/day and stall dbt. This contradicts DECISIONS §5 ("keys live in Secret Manager") as written; A12 (`docs/security.md`, pending) reconciles §5 and sets the rotation schedule. |
+| Bot GitHub account's fine-grained token | The agent machine's `gh` login | Repo-scoped, **write** not admin, 90-day expiry (`docs/author_setup.md` §1.2). Can't change rulesets, environments or secrets. |
+| Bot Google account's login | The agent machine's `gcloud` config | Can only mint tokens for `osp-builder-dev` (§4.1). |
+| Slack webhook for CI alerts | GitHub Actions secret `SLACK_WEBHOOK_URL` | Allowed by DECISIONS §5. |
+| WIF provider name, service-account emails | GitHub Actions variables (not secrets) | Identifiers, not credentials. |
 
-**Public repo note:** the repo is public. Workflows triggered by pull
-requests from forks don't receive OIDC tokens or secrets, so a fork can't
-reach any identity above. The WIF conditions pin the repository by name
-as a second guard.
-
-## 6. What the dev project can't host
-
-Without billing, the dev project runs BigQuery only.
-- **GCS, Secret Manager, Cloud Run and Cloud Scheduler** are expected to
-  need a billing account. Confirm this in the milestone-2 sandbox spike and
-  update this section.
-- In dev, ingest writes Parquet to the local filesystem and loads it into
-  BigQuery from there.
-- **Dev Terraform state** is local and disposable, kept out of git by
-  `.gitignore`. Hosting it in a bucket would need billing, and the dev
-  project holds nothing worth protecting.
+**Public-repo note:**
+- **The repo is public.** Workflows triggered by `pull_request` from forks
+  get no secrets and no OIDC token.
+- **`pull_request_target` does get them, so it's banned.** The WIF provider
+  condition rejects tokens from it, and a CI check (B11) will reject any
+  workflow file that uses it.
+- **Fork workflows can't get a token anyway:** the provider condition also
+  requires this repository's numeric ID, so a fork, which has a different
+  ID, can't get a token at all.
 
 ## 7. Change rules
 
-- **Any change to §3 ships in the same PR as the Terraform that implements
-  it.** CI fails the build if they disagree.
-- **Prod grants need the author's review.** Agents may propose them in a PR
-  but can't apply them: `osp-tf-apply-prod` only acts from `main`, and
-  only the author merges to `main`.
-- **Adding a principal** means a new row in §2 and its grants in §3. Never
+- **Any change to §4 ships in the same PR as the Terraform that implements
+  it.** Once B11 lands, CI fails the build if they disagree.
+- **`docs/access_matrix.md` and `terraform/**` are CODEOWNERS-protected.**
+  An agent can propose an access change, but the author approves it.
+- **Prod grants are applied only by `prod-apply`** (author-approved,
+  `main` only). **Dev grants to the bot or to `osp-builder-dev` are applied
+  by the author by hand** (`docs/author_setup.md`), never by the agent.
+- **Adding a principal** means a new row in §2 and its grants in §4. Never
   a broader grant on an existing identity "to make it work."
 
 ## Change log
 
 | Date | Change |
 |---|---|
-| 2026-11-11 | Initial version (backlog A8). Two-project model per ADR 0002. Corrects `architecture.md` §7: dbt has no GCS access; the dashboard also needs `bigquery.jobUser` to run queries. |
+| 2026-11-11 | Initial version (backlog A8), per ADR 0002. Corrects `architecture.md` §7 in four places: dbt has no GCS access; the dashboard also needs `bigquery.jobUser`; the separate "reviewer" identity is dropped (the solo author is Owner, so it would add an identity without removing any access); and "no human developer access in prod" doesn't hold for a solo Owner. Adds a dedicated build identity, environment-gated prod CI identities, and kill-switch identities. |
