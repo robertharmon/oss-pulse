@@ -51,7 +51,9 @@ Terms used throughout. Project vocabulary is enforced per
 - **Actor** — the GitHub user who performed an event. Never "user"
   (ambiguous with "dashboard user") or "author" (reserved for commit
   authorship inside push events).
-- **Hour** — the UTC hour of an event's `created_at`, as `YYYY-MM-DD-HH`.
+- **Hour** — the UTC hour of an event's `created_at`, written `YYYY-MM-DD-HH`
+  (zero-padded) everywhere inside this project. GH Archive's URLs use an
+  **unpadded** hour instead; see §3.1.
   All partitioning, scheduling, and SLAs are UTC-hour-aligned.
 - **Grain** — what one row of a table represents. "One row per event",
   "one row per repo per day", etc.
@@ -67,7 +69,11 @@ Terms used throughout. Project vocabulary is enforced per
 
 ### 3.1 Source
 
-- **URL pattern:** `https://data.gharchive.org/<YYYY-MM-DD-HH>.json.gz`
+- **URL pattern:** `https://data.gharchive.org/<YYYY-MM-DD-H>.json.gz`,
+  where `H` is the hour **without zero-padding** (`0`–`23`). So 05:00 UTC
+  is `2026-11-10-5.json.gz`; `2026-11-10-05.json.gz` returns HTTP 404.
+  Ingest must convert the project's padded hour to this form; a test
+  covers hours 0–9.
 - **Format:** gzipped line-delimited JSON. One JSON object per line, one
   event per object.
 - **Access:** public, unauthenticated, HTTPS.
@@ -88,7 +94,7 @@ once the pipeline runs in Phase D.
 | File size (gzipped) | ~6.5–14.2 MB per hour (7 published hours sampled; mid-day UTC runs ~6.5–7.7 MB, off-peak samples ran larger) | measured | Trivially fits in Cloud Run memory; still stream for forward-compatibility if volumes grow |
 | File size (decompressed) | ~30–36 MB per hour (5 hours decompressed; the 14 MB gzipped sample was HEAD-only) | measured | Same |
 | Row count per hour | ~5,000–7,700 events per hour (5 hours line-counted, range 5,171–7,736) | measured | Load path easily handles 10× this; no batching needed |
-| Availability | **~55% of hours probed were present** — 11 of a 17-hour sample came back 200, 6 came back 404 well past any reasonable late-publish window (36+ hours after close) | measured, small sample | Missing-hour handling is a hot path, not an edge case; see §3.3 |
+| Availability | **72 of 72 hours present** (every hour of 2026-10-06, 2026-10-07 and 2026-11-09, probed with unpadded URLs on 2026-11-11). The earlier "~55% present" figure was a measurement error (see §3.2.1). | measured | A missing hour is rare: treat it as an alerting failure, not routine; see §3.3 |
 | Schema stability | GitHub's event schema has been stable for years but is **not versioned** | public knowledge | See §3.3 for how we detect drift |
 
 **Scheduler-margin note.** The architecture ([`architecture.md`](architecture.md)
@@ -111,7 +117,15 @@ All measurements taken on **2026-10-07**. Two passes:
    field presence, event-type distribution, and payload shape
    (see §3.3, §4.3, §5.1). Additional HEAD probes on 11 off-peak hours
    on 2026-10-06 and 2026-10-07 — 11 of 17 total probed hours
-   returned 200; the rest 404'd.
+   returned 200; the rest 404'd. **Correction (2026-11-11):** those
+   probes used zero-padded hours (`-05`), which GH Archive doesn't
+   serve. The 404s are consistent with exactly that, and re-probing all
+   24 hours of both days with unpadded URLs returned 24/24 each.
+3. **Re-check (2026-11-11)** — full-day HEAD probes (unpadded) on
+   2026-10-06, 2026-10-07 and 2026-11-09: 72/72 present. Downloaded
+   2026-11-10 hours 15–17: 2.0–2.4 MB gzipped, 9,017 events total
+   (~3,000/hour), below the October ranges above. Volumes are drifting
+   down; the ranges above are kept as the October baseline.
 
 Measurement scripts aren't checked in — PowerShell one-liners,
 re-runnable against any hour. This is a one-day sample, not a
@@ -133,7 +147,7 @@ Each has a defined handling pattern. Fail-fast at ingest
 
 | Failure | Signal | Handling |
 |---|---|---|
-| **Missing hour (404)** — common; §3.2 measured ~35% of probed hours as missing well past any reasonable late-publish window | HTTP 404 at the hourly URL past N+65 | **Non-alerting by default** — too noisy to page on. Instead, record the miss in a `raw_ingest_audit` table (hour, 404 timestamp, retry count). An hourly summary job alerts only if the trailing 24h miss rate exceeds a threshold (initial guess: >60%). Downstream models skip gaps; the dashboard renders missing hours as blank, not errors. |
+| **Missing hour (404)** — rare; §3.2 found 72/72 hours present | HTTP 404 at the hourly URL past N+65 | Record the miss in `raw_ingest_audit` (hour, 404 timestamp, retry count), retry on the next scheduled runs, and **alert if the hour is still missing after 3 attempts** (≈3 hours). Since misses are rare, each one is worth a look. Downstream models skip gaps; the dashboard renders missing hours as blank, not errors. |
 | **Late hour (published after N+65)** | 404 at scheduled fetch, 200 at manual retry | Manual re-trigger of the ingest service with the same `{"hour": …}` body. Pipeline is idempotent on hour. |
 | **Transient 5xx** | HTTP 5xx on first try | Cloud Run auto-retries 3×. If all retries fail, alert; same recovery as missing hour. |
 | **Truncated file** | gzip decode error or JSON parse error mid-stream | Fail-fast raises; alert fires. Re-trigger manually once GH Archive republishes. |
@@ -529,4 +543,5 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-10-07 | Initial version. Covers upstream (GH Archive), raw + staging layers, four mart contracts, Streamlit consumer, change-management rules. Closes A7. |
 | 2026-10-07 | §3.2 replaced order-of-magnitude guesses with measurements from a 6-hour sample on 2026-10-07; added §3.2.1 (method) and a scheduler-margin note. Added §8 item for the scheduler offset. |
 | 2026-10-07 | Follow-up measurement run (32,602 rows across 5 hours + 11 off-peak HEADs) drove: §3.2 availability downgraded to ~55% measured, file-size and row-count ranges widened; §3.3 missing-hour upgraded from edge case to hot path (non-alerting by default); §4.1 added `org_id`, `org_login`, `is_public`; §4.3 added `DiscussionEvent` to the whitelist and noted PushEvent/CreateEvent/DeleteEvent/SponsorshipEvent as absent-but-whitelisted; §5.1 removed `is_push`/`push_commit_count`, re-derived PR flags from `payload.action` (the measured discriminator); §5.3 replaced `pushes_*` columns with `prs_opened_*` + `prs_merged_*`; §5.5 redefined the mart around PR-opening actors (PushEvent-based commit metric unbuildable); §5.6 replaced `push` bucket with `issue_opened` + `star`; §8 added README-wording-drift item. |
+| 2026-11-11 | §3.1 URL pattern corrected to an unpadded hour (`-5`, not `-05`); §2 notes the project's own hour stays padded. §3.2 availability corrected from ~55% to 72/72 present: the earlier 404s came from padded URLs (§3.2.1 correction + re-check). §3.3 missing hour downgraded from routine to rare, now alerting after 3 failed attempts instead of a trailing-24h miss-rate threshold. |
 | 2026-11-11 | §5.4 `distinct_contributors` / `total_contributors_this_month` redefined on PR-opened or PR-merged events (the old definition still referenced the absent `PushEvent`); noted shares can sum past 100%. §5.1 `is_pr_merged` re-verified against 3 fresh hours (`merged` action confirmed present) and noted that a merge event's actor is the merger, not the author. |
