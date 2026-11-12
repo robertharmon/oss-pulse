@@ -7,6 +7,14 @@
 >
 > **This file is the canonical source of truth for where the foundation
 > phase stands.** Every session starts by reading it and ends by updating it.
+>
+> **Since 2026-11-11 the build-out is agentic**
+> ([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md)):
+> - Dev and prod are separate, capped GCP projects.
+> - Pipeline building proceeds against dev once Phases A and B are done.
+>   It doesn't wait for the rest of Phases C and D.
+> - Phase C items marked *(author)* need the author's accounts and are done
+>   by the author. See [`docs/author_setup.md`](docs/author_setup.md).
 
 Status markers:
 - `[ ]` not started
@@ -128,6 +136,8 @@ or cloud resources so every subsequent choice has something to check against.
   retroactively 2026-10-06 to close the "how does a new session know
   what to do" gap; realized after A4 landed._
 
+## Phase B — Repo scaffolding
+
 The dressed-but-empty repo. Every tool and gate that will protect subsequent
 code lands here, even when there's no code to protect yet. "Walking
 skeleton": all guardrails on, no content.
@@ -178,18 +188,37 @@ skeleton": all guardrails on, no content.
 - [x] **B10. ADR template** — `docs/adr/0000-template.md` for future ADRs.
   Done when: committed and referenced by ADR 0001.
 
+- [ ] **B11. Verifier tooling and branch rules** — the machinery that makes
+  agent work trustworthy (ADR 0002 §3, §5). Includes:
+  - the red-proof check (new tests must fail against the base branch);
+  - the tests-untouched-after-red check;
+  - the failure-mode coverage script;
+  - the executable-docs runner;
+  - the `dbt build --empty` CI job;
+  - the docs ↔ code diff scripts (contract ↔ `schema.yml`, access matrix ↔
+    Terraform IAM);
+  - subagent definitions in `.claude/agents/`;
+  - the lock hook;
+  - the `build/agentic` ruleset and CODEOWNERS.
+
+  Done when: each verifier rejects a deliberately planted bad input in a
+  drill PR.
+
 ## Phase C — Cloud bootstrap
 
 The one unavoidable manual action (create a GCP project + a bootstrap
 service account), then everything else is Terraform. By the end of this
 phase, the cloud account mirrors what the operating docs promise.
 
-- [ ] **C1. GCP project created** — dedicated Google account, project ID
-  per DECISIONS.md §1, billing linked, alerts set at $1 and $5. Done when:
-  project exists, billing alerts are live.
+- [ ] **C1. GCP projects created** *(author)* — dedicated Google account;
+  dev project `oss-pulse-dev-<yyyy>` and prod project `oss-pulse-<yyyy>`
+  per DECISIONS.md §1; billing linked; budget alerts at $1 and $5. Done
+  when: both projects exist and billing alerts are live. Prod may wait
+  until cutover.
 
-- [ ] **C2. BigQuery scan quota** — custom quota at 10 GB/day per project
-  per DECISIONS.md §1. Done when: a deliberate 11 GB `SELECT` is rejected.
+- [ ] **C2. BigQuery scan quota** *(author)* — custom quota at 10 GB/day
+  per project per DECISIONS.md §1. Done when: a deliberate 11 GB `SELECT`
+  is rejected.
 
 - [ ] **C3. Terraform remote state bucket** — GCS bucket for Terraform
   state, versioned, lifecycle-protected. The one bucket Terraform doesn't
@@ -218,6 +247,18 @@ phase, the cloud account mirrors what the operating docs promise.
 - [ ] **C8. Alerting webhook end-to-end** — a dummy workflow failure posts
   to Slack. Done when: a planted failure in CI results in a Slack message
   within 1 minute.
+
+- [ ] **C9. Billing kill switch** *(author deploys; agent writes the
+  function)* — budget → Pub/Sub → Cloud Run function that unlinks billing,
+  on each project (DECISIONS §1). Done when: a simulated over-budget
+  notification unlinks billing on the dev project, and re-linking restores
+  it.
+
+- [ ] **C10. Agent identities** *(author)* — bot Google account, bot GitHub
+  account with write access, and the dev-only `osp-builder-dev` service
+  account with token-minting granted to the bot (ADR 0002 §2). Done when:
+  the agent's machine has no author login, and the bot can query dev
+  BigQuery but gets 403 on prod.
 
 ## Phase D — Walking-skeleton smoke test
 
@@ -267,3 +308,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-10-05 | A5 (architecture doc + diagram) closed. |
 | 2026-10-06 | A6 (CONVENTIONS.md) closed. |
 | 2026-10-07 | A7 (data contract) closed. |
+| 2026-11-11 | Agentic build-out adopted (ADR 0002): header note added, B11 (verifier tooling) added, C1/C2 marked author-only and C1 split into two projects, C9 (kill switch) and C10 (agent identities) added. |

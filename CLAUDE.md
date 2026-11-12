@@ -46,43 +46,48 @@ authoritative source if the two ever drift.
    item and work it.
 2. **`OPEN_LOOPS.md`** — small ad-hoc chores that aren't on the phased
    plan. Scan at the start of a session for cheap pickups.
-   **`QUESTIONS.md`** — open questions waiting on the author. Check for
+3. **`QUESTIONS.md`** — open questions waiting on the author. Check for
    new answers before starting work.
-3. **`DECISIONS.md`** — locked operating decisions (GCP account,
+4. **`DECISIONS.md`** — locked operating decisions (GCP account,
    region, environments, naming, secrets, error handling, resource
    management, testing, branching, runtime/packaging, scope). Consult
    *before* suggesting anything that touches these.
-4. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
+5. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
    style, SQL style, PR titles, when to write comments). Points at
    DECISIONS.md for anything already locked there.
 
 ### Reference context (what the project is and how it fits together)
 
-5. **`README.md`** — one-pager repo intro: what oss-pulse is, what
+6. **`README.md`** — one-pager repo intro: what oss-pulse is, what
    questions it answers, current status, repo map.
-6. **`docs/architecture.md`** — target system architecture: ASCII
+7. **`docs/architecture.md`** — target system architecture: ASCII
    diagram, per-component responsibilities, end-to-end trace of one
    record, failure-boundary matrix, security-boundary summary.
-7. **Every ADR in `docs/adr/`** — architectural rationale. Read them
+8. **Every ADR in `docs/adr/`** — architectural rationale. Read them
    all, not just "the relevant one." `0001-tech-stack.md` is the stack
    foundation; later ADRs record subsequent decisions.
 
 ## Current phase
 
-**Agentic build-out** ([ADR 0002](docs/adr/0002-agentic-build-out-and-sandbox-dev.md)).
+**Agentic build-out** ([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md)).
 Agents build the project on the `build/agentic` integration branch against
-a no-billing dev GCP project. The author reviews milestone PRs into `main`
-and does the final prod cutover by hand.
+a capped dev GCP project, using their own bot identities. The author
+reviews milestone work and does the first prod bring-up (cutover) by hand.
 
-- **Order still matters:** finish foundation docs (Phase A) and
-  scaffolding plus verifier tooling (Phase B) before pipeline code.
-- **Cloud-dependent items** (Phase C, Phase D) wait until the author has
-  created the accounts. Pipeline building does **not** wait for them; it
-  proceeds against the dev project.
+- **Order still matters:** finish the foundation docs (Phase A), then
+  scaffolding plus verifier tooling (Phase B, including B11), before
+  pipeline code.
+- **Cloud-dependent items** (Phases C and D) wait until the author has
+  created the accounts in [`docs/author_setup.md`](docs/author_setup.md).
+  Pipeline building doesn't wait for prod; it proceeds against the dev
+  project.
 - **Agent hard limits:**
   - Never create accounts or projects.
-  - Never touch billing or IAM.
+  - Never touch billing.
+  - Never *run* IAM changes (writing Terraform IAM code for review is
+    fine).
   - Never run anything against the prod project.
+  - Never edit `.claude/settings.json` permission rules.
 - **Blocking questions** go in `QUESTIONS.md`. Keep working on unblocked
   items while they wait.
 

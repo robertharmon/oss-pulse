@@ -27,7 +27,27 @@ Format:
 
 ## Open
 
-_(none)_
+### Q1. How should commits be attributed once the bot account pushes?  (opened 2026-11-11, blocks: `docs/author_setup.md` 1.2 step 4)
+**Context:** DECISIONS §9 says the author of a commit is Robert. With the
+bot pushing branches and squash-merging PRs into `build/agentic`, GitHub
+will show the bot as the PR author and merger. Squash-merge commits are
+typically attributed to the PR's author, so the bot may also show up as
+the commit author.
+
+**Options:**
+- **(a) Recommended.** Keep `git config user.name/email` as Robert on the
+  agent's machine, so every commit the agent makes is authored by Robert
+  and only *pushed* by the bot. When milestones are promoted to `main`,
+  Robert does the merge, so `main`'s history shows Robert. The bot stays
+  visible only as the PR opener on `build/agentic` PRs. Cost: the bot's
+  name appears in PR lists.
+- **(b)** Accept the bot as visible author/merger everywhere. It's honest
+  about tooling, but it contradicts §9 as written.
+- **(c)** The bot only pushes branches and opens PRs; Robert does every
+  merge. Cost: every PR waits on Robert, which undoes the "agent merges"
+  decision.
+
+**Answer:** _(author fills in)_
 
 ## Answered
 
