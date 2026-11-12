@@ -9,17 +9,28 @@
 Dedicated Google account used only for this project (not personal Gmail).
 Separates billing, IAM, and audit trails from any real-identity account.
 
-Billing cap: **$0/month target.** Enforced by (1) Google billing alerts at $1
-and $5, (2) a BigQuery custom query quota of 10 GB scanned/day, (3)
-preferring serverless-and-free services (Cloud Scheduler, Cloud Run,
-Streamlit Community Cloud) over always-on VMs. If a specific learning
-exercise requires a paid resource (e.g., a Kestra VM for 2 weeks of
-orchestrator practice), it's an explicit, time-boxed decision logged as an
-ADR, not a drift.
+Billing cap: **$0/month target.** Only some of the mechanisms below
+actually *cap* spend. The others only notify:
 
-**Project ID:** `oss-pulse-<yyyy>` (locked at project creation, cannot
-change).
-**Project number:** recorded in `terraform/outputs.tf` after bootstrap.
+- **Hard caps:** (1) the dev project has **no billing account linked**, so
+  it can't be charged at all ([ADR 0002](docs/adr/0002-agentic-build-out-and-sandbox-dev.md));
+  (2) a BigQuery custom query quota of 10 GB scanned/day on the prod
+  project.
+- **Notifications only:** Google budget alerts at $1 and $5 on the prod
+  project. **Budget alerts send email; they do not stop spending.**
+- **Design choice:** prefer serverless-and-free services (Cloud Scheduler,
+  Cloud Run, Streamlit Community Cloud) over always-on VMs.
+
+If a specific learning exercise requires a paid resource (e.g., a Kestra
+VM for 2 weeks of orchestrator practice), it's an explicit, time-boxed
+decision logged as an ADR, not a drift.
+
+**Project IDs** (locked at project creation, cannot change):
+- `oss-pulse-dev-<yyyy>`: dev, no billing.
+- `oss-pulse-<yyyy>`: prod, billed.
+
+Both are created by the author, never by an agent.
+**Project numbers:** recorded in `terraform/outputs.tf` after bootstrap.
 
 ## 2. Region
 
@@ -35,12 +46,20 @@ reasons later demand it, that's a new ADR.
 
 ## 3. Environments
 
-Two environments only: `dev` and `prod`.
+Two environments only: `dev` and `prod`, **each in its own GCP project**
+([ADR 0002](docs/adr/0002-agentic-build-out-and-sandbox-dev.md)).
 
-- `dev` — my working environment. Loose data, loose schedules, cheap.
-  Datasets suffixed `_dev`.
-- `prod` — the "running pipeline" environment. Scheduled by the
-  orchestrator. Datasets suffixed `_prod`.
+- `dev` lives in `oss-pulse-dev-<yyyy>`, with no billing account (BigQuery
+  sandbox mode). It's the working environment for the author and for
+  agents. Loose data, loose schedules, free by construction. Datasets
+  suffixed `_dev`.
+- `prod` lives in `oss-pulse-<yyyy>`, billed and quota-capped. It's the
+  "running pipeline" environment, scheduled by the orchestrator. Datasets
+  suffixed `_prod`. Agents have no credentials for this project.
+
+Dataset suffixes stay even though the projects already separate the
+environments. A query aimed at the wrong project then fails with "dataset
+not found" instead of silently reading the other environment's data.
 
 No `staging`. For a solo project, three environments is theater — the
 dev/prod split alone exercises the right habit (don't develop against prod)
@@ -57,7 +76,7 @@ vocabulary consistent.
 
 Specifics for oss-pulse:
 
-- **GCP project ID:** `oss-pulse-<yyyy>`
+- **GCP project IDs:** `oss-pulse-dev-<yyyy>` (dev), `oss-pulse-<yyyy>` (prod)
 - **GCS buckets:** `osp-<purpose>-<env>` — e.g. `osp-raw-events-dev`,
   `osp-terraform-state`
 - **BigQuery datasets:** `osp_<layer>_<env>` — e.g. `osp_raw_dev`,
@@ -227,3 +246,4 @@ Anything in this list requires its own ADR before scope changes.
 | 2026-10-05 | Initial version committed. | — |
 | 2026-10-05 | §9: added no-AI-assistant-attribution rule. | — |
 | 2026-10-06 | §10 added: no local Docker; deploy via `gcloud run --source`; `uv` for Python deps. Section 10 (scope boundaries) renumbered to §11. | — |
+| 2026-11-11 | §1: separated hard spend caps (no-billing dev project, prod query quota) from notification-only budget alerts. §1/§3/§4: dev and prod split into two GCP projects; dev has no billing account; agents hold credentials for dev only. | [0002](docs/adr/0002-agentic-build-out-and-sandbox-dev.md) |

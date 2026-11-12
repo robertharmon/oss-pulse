@@ -46,6 +46,8 @@ authoritative source if the two ever drift.
    item and work it.
 2. **`OPEN_LOOPS.md`** — small ad-hoc chores that aren't on the phased
    plan. Scan at the start of a session for cheap pickups.
+   **`QUESTIONS.md`** — open questions waiting on the author. Check for
+   new answers before starting work.
 3. **`DECISIONS.md`** — locked operating decisions (GCP account,
    region, environments, naming, secrets, error handling, resource
    management, testing, branching, runtime/packaging, scope). Consult
@@ -67,14 +69,22 @@ authoritative source if the two ever drift.
 
 ## Current phase
 
-**Foundation.** No pipeline code exists yet, by intention. Scaffolding,
-foundation docs, and cloud bootstrap come first (`FOUNDATION_BACKLOG.md`
-Phases A → B → C → D). The pipeline itself only begins once the
-foundation backlog is empty.
+**Agentic build-out** ([ADR 0002](docs/adr/0002-agentic-build-out-and-sandbox-dev.md)).
+Agents build the project on the `build/agentic` integration branch against
+a no-billing dev GCP project. The author reviews milestone PRs into `main`
+and does the final prod cutover by hand.
 
-If asked to "start building the pipeline," check whether foundation is
-genuinely complete. If not, surface which items remain and recommend
-finishing those first.
+- **Order still matters:** finish foundation docs (Phase A) and
+  scaffolding plus verifier tooling (Phase B) before pipeline code.
+- **Cloud-dependent items** (Phase C, Phase D) wait until the author has
+  created the accounts. Pipeline building does **not** wait for them; it
+  proceeds against the dev project.
+- **Agent hard limits:**
+  - Never create accounts or projects.
+  - Never touch billing or IAM.
+  - Never run anything against the prod project.
+- **Blocking questions** go in `QUESTIONS.md`. Keep working on unblocked
+  items while they wait.
 
 ## Workflow conventions (reflex)
 
@@ -83,6 +93,8 @@ Pulled from `DECISIONS.md` §9 — treat as muscle memory:
 - Every change is a **feature branch → PR → squash merge → delete branch**.
   No direct pushes to `main` — the `protect-main` GitHub ruleset enforces
   this (verified via smoke test).
+- **During the agentic build-out:** feature branches start from, and PRs
+  target, `build/agentic`, not `main`. Only milestone PRs target `main`.
 - **Branch names:** `type/short-slug` — e.g. `docs/adr-0005-schema`,
   `feat/hourly-ingest`, `fix/sqlfluff-trailing-comma`,
   `chore/add-make-targets`.
