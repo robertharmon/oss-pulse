@@ -36,6 +36,14 @@ def test_parses_ids_with_status() -> None:
     }
 
 
+def test_bold_words_in_a_row_are_not_status_markers() -> None:
+    text = (
+        "| R-07 | Each hour is **succeeded**, **pending** or **retired**. |\n"
+        "| FM-30 | A **Pending:** label in bold | x | y |\n"
+    )
+    assert parse_contract_ids(text) == {"R-07": "live", "FM-30": "live"}
+
+
 def test_finds_pytest_markers_and_dbt_tags() -> None:
     files = [
         (
