@@ -3,9 +3,8 @@
 > From here to a finished v1: seven milestones, what each one delivers,
 > how we know it's done, and what each needs from the author.
 >
-> **Status:** backlog A10. The decisions in §4 were approved 2026-11-18;
-> the document as a whole awaits the author's sign-off. **This is a
-> tracker:** each item carries a status marker
+> **Status:** approved by the author 2026-11-18 (backlog A10), including
+> the decisions in §4. **This is a tracker:** each item carries a status marker
 > (`[ ]` open, `[~]` in progress, `[x]` done, `[-]` skipped). Items that
 > came from `FOUNDATION_BACKLOG.md` keep their IDs (A–D) and are ticked in
 > both places until the backlog is archived.
@@ -85,8 +84,8 @@ author clears that batch sets the pace of those milestones.
 - [x] **A11** cost model, with its decisions applied to the contract,
   access matrix and runbook.
 - [x] **A12** security posture (`docs/security.md`).
-- [~] **A10** roadmap (this doc) and **A13** ways of working. Done when:
-  author approved and merged; `CLAUDE.md` points at both.
+- [x] **A10** roadmap (this doc) and **A13** ways of working. Approved and
+  merged; `CLAUDE.md` points at both.
 - [ ] **`architecture.md` drift fix.** Done when it matches the current
   decisions:
   - daily dbt from its own Scheduler job; ingest doesn't invoke dbt;
@@ -102,7 +101,7 @@ author clears that batch sets the pace of those milestones.
 
   It **doesn't** decide whether dbt runs as a Cloud Run service or job:
   the ingest ADR does.
-- [ ] **Contract additions.** Done when:
+- [x] **Contract additions** (approved 2026-11-18). Done when:
   - contract failure modes have IDs (`FM-01`…) and §3.3's "Cloud Run
     auto-retries 3×" is replaced by the real retry rule;
   - `raw_ingest_audit` has an entry;
@@ -353,3 +352,4 @@ gates are required checks, and no cutover before every gate is green.
 | Date | Change |
 |---|---|
 | 2026-11-18 | Initial version (A10). Folds in the A10 inputs from `FOUNDATION_BACKLOG.md`. Revised after independent review: dev CI identity in M2; A12 in M1; B11 checks must be required; v1 criteria made measurable and the date moved to after a full invoice month; merge-before-cutover details (Environments first, revert not reset); done-whens that move to the cutover; approval load; fuller costs for both decisions. §4 decisions approved by the author. |
+| 2026-11-18 | Signed off by the author. M1: A10, A13 and the contract additions done; only the `architecture.md` drift fix remains. |

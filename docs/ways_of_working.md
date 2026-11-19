@@ -219,3 +219,4 @@ twice. Either the rule is wrong, or it needs a check that enforces it.
 | Date | Change |
 |---|---|
 | 2026-11-18 | Initial version (A13), proposed for the author's approval. Records the per-PR loop from the 2026-11-11 build-out plan in the repo. Revised after independent review: stubs commit and assertion-only red proof; explicit test paths; no mixed commits; test fixes re-proven red, with the commit-identity limit stated; required checks for drills; red-team attempts logged per failure mode; post-merge rules; approval batching; trackers. |
+| 2026-11-18 | Approved by the author. |
