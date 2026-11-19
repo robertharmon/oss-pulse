@@ -24,6 +24,12 @@
 | **Spec-reconstructor** | Subagent | Reads only the code, writes the contract entry it implies. A script diffs the structured fields (grain, columns, types, tests) against `docs/data_contract.md`; the reviewer judges any prose differences. | See the contract first. |
 | **Red team** | Subagent | At the end of each code milestone, writes realistic inputs meant to break the pipeline, as failing tests. | Change production code. |
 
+**The role boundaries are enforced where they can be.** A lock hook
+(`scripts/lock_paths_hook.py`, ADR 0002 §2) denies the builder and other
+agents writes to test paths, denies the reviewer all writes, and keeps the
+spec-reconstructor out of `docs/`. It doesn't see shell commands; CI's
+`commit-paths` and `red-proof` checks cover that gap.
+
 **The author's time is the scarcest resource.** Everything below is
 designed so the author's involvement is limited to decisions only the
 author can make: scope, cost, security, accounts, ambiguous specs, check

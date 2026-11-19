@@ -86,6 +86,18 @@ other environment.
   B11) will deny `gcloud billing`, `gcloud iam`, `gcloud projects`, and
   commands naming the prod project ID. These are defense in depth: easy to
   get around, and not relied on.
+- **A lock hook** (`PreToolUse`, `scripts/lock_paths_hook.py`) enforces who
+  may write and read which paths. Hook input carries `agent_id` and
+  `agent_type` only for subagents, so it can treat the builder (the main
+  session) differently from each subagent:
+  - only the test-writer writes test paths (and the red-team, only under
+    `tests/adversarial/`); the builder and other agents can't;
+  - the reviewer writes nothing;
+  - the spec-reconstructor can't read `docs/`, so it never sees the
+    contract.
+
+  It sees file tools only, not shell commands that write files. CI's
+  commit-path and red-proof checks are the backstop.
 
 ### 3. Branch rules make the verifiers binding
 
