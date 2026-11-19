@@ -98,9 +98,10 @@ or cloud resources so every subsequent choice has something to check against.
     Terraform-only).
   - **Production alert path** — C8 proves CI → Slack, not Cloud Logging →
     Slack.
-  - **Storage retention vs. free tiers** — "keep forever" in
-    `architecture.md` §3 will exceed GCS (5 GB) and BigQuery (10 GB) free
-    storage within months; belongs in A11.
+  - **Apply A11's approved decisions** (`docs/cost_model.md` §8) to
+    `architecture.md`: daily dbt via its own Scheduler job, retention
+    instead of "keep forever", ingest no longer invokes dbt. (Contract,
+    access matrix and runbook are updated right after A11.)
   - **`architecture.md` drift** — still says Docker/Artifact Registry
     (contradicts DECISIONS §10), 0.5–1 GB files (measured 2–14 MB),
     PushEvent in trending, "Cloud Run auto-retries 3×" (retries live on
@@ -115,7 +116,7 @@ or cloud resources so every subsequent choice has something to check against.
   - **`ROADMAP.md` duplication** — the "When this backlog is empty" step 2
     copies `docs/roadmap.md` to a second file; keep one.
 
-- [ ] **A11. Budget & cost model** — `docs/cost_model.md`. Expected monthly
+- [x] **A11. Budget & cost model** — `docs/cost_model.md`. Expected monthly
   spend by service (should be $0), the BigQuery scan quota, cost-alerting
   mechanism, attribution via labels. Done when: committed, and the quotas it
   references match what Terraform will apply in Phase C.
@@ -318,3 +319,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-11-11 | Agentic build-out adopted (ADR 0002): header note added, B11 (verifier tooling) added, C1/C2 marked author-only and C1 split into two projects, C9 (kill switch) and C10 (agent identities) added. |
 | 2026-11-11 | A8 (access matrix) closed. |
 | 2026-11-11 | A9 (runbook) closed. |
+| 2026-11-18 | A11 (cost model) closed; its four decisions approved. A10 input on storage retention replaced by "apply A11 decisions to architecture.md". |
