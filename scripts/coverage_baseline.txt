@@ -1,0 +1,45 @@
+# Live contract IDs that don't have a test yet (scripts/check_failure_mode_coverage.py).
+# Shrink-only: CI fails if an ID here gains a test and isn't removed, or if a
+# live ID is missing from both this file and the tests. Empty by v1
+# (docs/roadmap.md §1.1). CODEOWNERS-protected.
+
+# Ingest, roadmap M3
+FM-01
+FM-02
+FM-03
+FM-04
+FM-05
+FM-06
+FM-09
+FM-12
+FM-13
+FM-14
+FM-18
+
+# dbt and operations, roadmap M4 (FM-15, FM-19) and M6 (FM-20)
+FM-07
+FM-08
+FM-10
+FM-11
+FM-15
+FM-17
+FM-19
+FM-20
+
+# Reconciliation counts, roadmap M3 (R-01) and M4
+R-01
+R-02
+R-03
+R-04
+R-05
+R-06
+R-07
+
+# Metamorphic relations, roadmap M3 (M-01) and M4
+M-01
+M-02
+M-03
+M-04
+M-05
+M-06
+M-07

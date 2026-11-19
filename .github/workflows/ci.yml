@@ -110,3 +110,35 @@ jobs:
           echo "${GITLEAKS_SHA256}  ${tarball}" | sha256sum --check --strict
           tar -xzf "$tarball" gitleaks
       - run: ./gitleaks git --redact --verbose --exit-code 1 .
+
+  # --- Verifiers (backlog B11). Stdlib-only scripts; no dependencies needed.
+
+  failure-mode-coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: python3 -m scripts.check_failure_mode_coverage
+
+  workflow-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: python3 -m scripts.check_workflow_policy
+
+  doc-commands:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - run: python3 -m scripts.run_doc_commands
+
+  commit-paths:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # every commit in the PR, not just the merge result
+      - run: >-
+          python3 -m scripts.check_commit_paths
+          ${{ github.event.pull_request.base.sha }}
+          ${{ github.event.pull_request.head.sha }}
