@@ -1,0 +1,69 @@
+# Workspace root for oss-pulse (backlog B3). Not a package itself: it holds
+# the shared dev tools and their config. Each deployable (ingest, and later
+# dbt's runner, the dashboard, the kill switch) is a workspace member with
+# its own pyproject.toml, so each Cloud Run image carries only its own
+# dependencies. uv.lock pins everything; deploys export a per-member,
+# hash-pinned requirements file from it (roadmap M7).
+[project]
+name = "oss-pulse"
+version = "0.0.0"
+description = "Hourly ELT over public GitHub activity: GH Archive -> GCS -> BigQuery -> dbt -> Streamlit"
+requires-python = ">=3.11,<3.12"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["ingest"]
+
+[tool.uv.sources]
+osp-ingest = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "osp-ingest",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["dbt/dbt_packages", "dbt/target"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # import order
+    "B",       # bugbear: likely bugs
+    "UP",      # modern syntax for the target version
+    "N",       # naming
+    "SIM",     # simplifications
+    "S",       # bandit: security smells
+    "RUF",     # ruff's own rules
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["osp_ingest"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert is how pytest tests work
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["ingest/src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--import-mode=importlib", "-ra"]
+markers = [
+    "failure_mode(fm_id): covers a data-contract failure mode (FM-nn); read by the coverage check",
+    "metamorphic(m_id): a metamorphic relation test (M-nn, data contract section 5.9)",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ingest/src"]
