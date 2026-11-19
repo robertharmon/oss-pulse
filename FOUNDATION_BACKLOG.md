@@ -121,7 +121,7 @@ or cloud resources so every subsequent choice has something to check against.
   mechanism, attribution via labels. Done when: committed, and the quotas it
   references match what Terraform will apply in Phase C.
 
-- [ ] **A12. Security posture doc** — `docs/security.md`. Data classes
+- [x] **A12. Security posture doc** — `docs/security.md`. Data classes
   handled (all public here — label each source), secrets rotation policy,
   audit logging posture, incident disclosure path. Done when: committed, and
   informs the Secret Manager + IAM wiring in Phase C.
@@ -320,3 +320,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-11-11 | A8 (access matrix) closed. |
 | 2026-11-11 | A9 (runbook) closed. |
 | 2026-11-18 | A11 (cost model) closed; its four decisions approved. A10 input on storage retention replaced by "apply A11 decisions to architecture.md". |
+| 2026-11-18 | A12 (security posture) closed. |

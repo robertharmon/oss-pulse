@@ -166,7 +166,7 @@ Condition):
 | `serviceAccount:osp-dbt-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | dbt runs queries. |
 | `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly ingest trigger. |
 | `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | The daily dbt build trigger (`docs/cost_model.md` §8.1). Ingest no longer invokes dbt. |
-| `serviceAccount:osp-dashboard-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataViewer` | - | Read marts only. Can't see raw or staging. |
+| `serviceAccount:osp-dashboard-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataViewer` | - | Read the marts. Can't see raw or staging. The dataset also holds `fct_events` and the dimensions; all public data, so a marts-only dataset isn't worth it (`docs/security.md` §3.1). |
 | `serviceAccount:osp-dashboard-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | A `SELECT` is a query job; read access alone can't run one. A per-user query quota caps this identity (§6). |
 | `serviceAccount:osp-build-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.builder` | - | Cloud Build runs as this identity to build images from source. Replaces the Compute Engine default service account, which gets broad `editor` by default. |
 | `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.sourceDeveloper` | - | `gcloud run deploy --source` (DECISIONS §10). |
@@ -203,7 +203,8 @@ which only the author merges into.
   Secret Manager or Cloud Run roles anywhere.
 - `osp-dbt-prod` has no GCS access. dbt reads raw from BigQuery, never from
   the bucket.
-- `osp-dashboard-prod` has nothing outside `osp_analytics_prod`.
+- `osp-dashboard-prod` has nothing outside `osp_analytics_prod`. (Inside
+  it, it can read every table, not only the marts.)
 - **No identity reads `osp_slack_webhook_url` programmatically.**
   - The Slack notification channel is **created by hand, outside
     Terraform**. Terraform receives only the channel's ID, as a plain
@@ -248,10 +249,10 @@ disagree, §4 wins.
 
 | Item | Lives in | Notes |
 |---|---|---|
-| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation. Scoped to read-only on marts, with a **per-user BigQuery query quota** so a leaked key can't use up the project's 10 GB/day and stall dbt. This contradicts DECISIONS §5 ("keys live in Secret Manager") as written; A12 (`docs/security.md`, pending) reconciles §5 and sets the rotation schedule. |
-| Bot GitHub account's fine-grained token | The agent machine's `gh` login | Repo-scoped, **write** not admin, 90-day expiry (`docs/author_setup.md` §1.2). Can't change rulesets, environments or secrets. |
+| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation. Read-only on `osp_analytics_prod`, with a **per-user BigQuery query quota** so a leaked key can't use up the project's 10 GB/day and stall dbt. DECISIONS §5 names this exception; `docs/security.md` §3.1 sets the handling and the 90-day rotation. |
+| Bot GitHub account's classic token (`repo`, `workflow`) | The agent machine's `gh` login | Limited by the bot's **write** (not admin) role, 90-day expiry (`docs/author_setup.md` §1.3). Fine-grained tokens can't act on a personal repo the bot only collaborates on. Can't change rulesets, environments or secrets. |
 | Bot Google account's login | The agent machine's `gcloud` config | Can only mint tokens for `osp-builder-dev` (§4.1). |
-| Slack webhook for CI alerts | GitHub Actions secret `SLACK_WEBHOOK_URL` | Allowed by DECISIONS §5. |
+| Slack webhook for CI alerts | GitHub Actions **environment** secret `SLACK_WEBHOOK_URL`, environment `ci-alerts`, deployment branches `main` and `build/agentic` only | A repo-level secret could be read by any workflow the bot pushes to an agent branch. Scoping it to an environment on protected branches closes that. |
 | WIF provider name, service-account emails | GitHub Actions variables (not secrets) | Identifiers, not credentials. |
 
 **Public-repo note:**
@@ -281,6 +282,8 @@ disagree, §4 wins.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | §4.2/§5: dashboard read scope stated honestly (whole analytics dataset). §6: Slack webhook becomes an environment secret on protected branches. |
+| 2026-11-18 | §6: bot token corrected to a classic token (matches author_setup §1.3); dashboard key row points to `security.md` §3.1. |
 | 2026-11-18 | Scheduler SA now invokes the dbt service directly (daily build); ingest loses its invoker grant on dbt. Per `docs/cost_model.md` §8.1. |
 | 2026-11-11 | Second review pass: `prod-plan` limited to protected branches; Slack channel kept out of Terraform; kill-switch grants completed (Browser, billing-account Viewer, invoker); builder and CI SAs moved to explicit `dataEditor` + `jobUser`; CI loads fixtures per run instead of reading expiring shared tables; Compute-default `editor` absence becomes a B11 check. |
 | 2026-11-11 | Initial version (backlog A8), per ADR 0002. Corrects `architecture.md` §7 in four places: dbt has no GCS access; the dashboard also needs `bigquery.jobUser`; the separate "reviewer" identity is dropped (the solo author is Owner, so it would add an identity without removing any access); and "no human developer access in prod" doesn't hold for a solo Owner. Adds a dedicated build identity, environment-gated prod CI identities, and kill-switch identities. |

@@ -113,15 +113,22 @@ Specifics for oss-pulse:
 Zero secrets in the repo. Ever. Not in `.env` files, not in
 `terraform.tfvars`, not in notebook outputs, not in commit messages.
 
-- All secrets live in Google Secret Manager
+- Pipeline secrets live in Google Secret Manager. The exceptions, each
+  listed with its reason in `docs/security.md` §3: the dashboard key
+  (Streamlit secrets), CI's Slack webhook (a GitHub Actions environment
+  secret), and the bot's GitHub token (the agent machine's keyring)
 - CI reads them from GitHub Actions secrets, scoped per environment
 - Local dev reads them via `gcloud secrets versions access` — never from a
   file
 - `gitleaks` runs as a pre-commit hook and as a CI job; a secret-shaped
   string blocks the commit
-- Service account keys are not downloaded. Workload Identity Federation is
-  used wherever possible; where it isn't, keys live in Secret Manager and
-  rotate on a schedule
+- Service account keys are not created. Workload Identity Federation is
+  used wherever possible. **One exception:** the Streamlit dashboard's
+  read-only key, because Streamlit Community Cloud can't use WIF. It's
+  created in Cloud Shell, never leaves it except into Streamlit's app
+  secrets (a Secret
+  Manager copy would be one more place to leak, with nothing to read it),
+  and rotates every 90 days. See `docs/security.md` §3.1.
 
 If a secret ever lands in a commit, the response is: rotate immediately,
 scrub via `git filter-repo` only after the key is dead, log it in
@@ -271,3 +278,4 @@ Anything in this list requires its own ADR before scope changes.
 | 2026-10-06 | §10 added: no local Docker; deploy via `gcloud run --source`; `uv` for Python deps. Section 10 (scope boundaries) renumbered to §11. | — |
 | 2026-11-11 | §1: separated hard spend caps (billing kill switch, query quota, dev table expiration) from notification-only budget alerts. §1/§3/§4: dev and prod split into two billed, capped GCP projects; agents reach dev only, through their own bot identity. | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
 | 2026-11-18 | §9: one final `build/agentic` → `main` promotion via "Rebase and merge" (no per-milestone promotions); commits stay authored by Robert when the bot pushes (QUESTIONS Q1 answer). | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
+| 2026-11-18 | §5: dashboard read-only key named as the one key-file exception (Streamlit secrets only, 90-day rotation), replacing "keys live in Secret Manager". | — |

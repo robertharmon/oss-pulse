@@ -38,6 +38,8 @@
    `osp-build-agent-<something>@gmail.com`.
 2. Turn on 2-step verification. Keep the password in your password
    manager; the agent never sees it.
+3. Forward its mail to your own address, so GitHub's token-expiry
+   warnings for the bot reach you (`docs/security.md` §3.4).
 
 ### 1.3 Bot GitHub account
 1. Sign up for a GitHub account with `<bot-email>`. Turn on 2FA.
@@ -69,6 +71,23 @@
 - `cmdkey /list | findstr github` shows nothing of yours.
 - A test PR the bot opens into `main` can't be merged by the bot.
 
+### 1.4 Repo security settings (GitHub UI, as yourself)
+**Settings → Advanced Security** (`docs/security.md` §6–§7):
+1. Turn on **Private vulnerability reporting**. `SECURITY.md` points
+   reporters to it.
+2. Turn on **Dependabot alerts**.
+3. Turn on **Secret scanning** and **Push protection**.
+
+4. **Settings → Actions → General:** turn on **Require actions to be
+   pinned to a full-length commit SHA**.
+5. **Settings → Environments → New environment `ci-alerts`:** deployment
+   branches `main` and `build/agentic` only. Add the Slack webhook as its
+   secret `SLACK_WEBHOOK_URL` when Slack exists (backlog C7). Never as a
+   repository secret.
+
+**Done when:** the repo's **Security** tab shows "Report a vulnerability",
+and a workflow using an unpinned action fails to start.
+
 ---
 
 ## Part 2 — Dev project (before milestone 2's BigQuery work)
@@ -83,6 +102,15 @@
    - Under "Manage notifications", connect topic `osp-budget-dev`.
 4. **IAM & Admin → Quotas**, filter "BigQuery API" → **Query usage per
    day** → 10 GB (10,240 MiB).
+5. **Test whether this project accepts the service-account key-expiry
+   policy** (`docs/security.md` §3.1). In Cloud Shell:
+   ```
+   gcloud org-policies describe iam.serviceAccountKeyExpiryHours \
+     --effective --project=oss-pulse-dev-<yyyy>
+   ```
+   Then try setting it to `2160h` (IAM & Admin → Organization Policies →
+   "Service account key expiry duration in hours"). Tell the agent
+   whether it was accepted; it records the answer in the security doc.
 
 ### 2.2 Agent identity, bucket (Cloud Shell)
 ```
@@ -173,3 +201,4 @@ output but holds no prod credentials.
 |---|---|
 | 2026-11-11 | Initial version, per ADR 0002. |
 | 2026-11-11 | Review fixes: branch rules moved to Part 1 (`main` requires approval, `build/agentic` protected now); classic token instead of fine-grained; clear Windows Credential Manager; agent SA gets `dataEditor` + `jobUser`; dev bucket with 7-day lifecycle; Pub/Sub topic created before the budget; `gcloud` impersonation configured. |
+| 2026-11-18 | §1.3 step 5: commit authorship (Q1 answered). §1.4 added: private vulnerability reporting, Dependabot alerts, secret scanning. |

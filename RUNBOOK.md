@@ -117,10 +117,12 @@ From DECISIONS §5. Order matters.
    that's three places, and missing the first silently breaks prod alerts:
    - the Cloud Monitoring **notification channel** (set by hand; nothing
      reads it from Secret Manager),
-   - the GitHub Actions secret `SLACK_WEBHOOK_URL`,
+   - the GitHub Actions environment secret `SLACK_WEBHOOK_URL`
+     (environment `ci-alerts`),
    - the record copy in Secret Manager.
 
-   For the dashboard key, it's Streamlit's app secrets.
+   For the dashboard key, it's Streamlit's app secrets; reboot the app
+   before checking it works (`docs/security.md` §3.1).
 3. **Check whether the old credential was used.** Look in Cloud Audit
    Logs (GCP), the GitHub security log, or Slack's app logs for activity
    between the leak and the rotation.
