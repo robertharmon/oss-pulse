@@ -48,7 +48,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["osp_ingest"]
+known-first-party = ["osp_ingest", "scripts"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]  # assert is how pytest tests work
@@ -56,11 +56,12 @@ known-first-party = ["osp_ingest"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["ingest/src", "tests"]
+files = ["ingest/src", "scripts", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--import-mode=importlib", "-ra"]
+pythonpath = ["."]
 markers = [
     "failure_mode(fm_id): covers a data-contract failure mode (FM-nn); read by the coverage check",
     "metamorphic(m_id): a metamorphic relation test (M-nn, data contract section 5.9)",
@@ -68,4 +69,4 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["ingest/src"]
+source = ["ingest/src", "scripts"]
