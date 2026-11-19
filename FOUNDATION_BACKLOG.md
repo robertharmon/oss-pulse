@@ -195,7 +195,7 @@ skeleton": all guardrails on, no content.
 - [x] **B10. ADR template** — `docs/adr/0000-template.md` for future ADRs.
   Done when: committed and referenced by ADR 0001.
 
-- [ ] **B11. Verifier tooling and branch rules** — the machinery that makes
+- [~] **B11. Verifier tooling and branch rules** — the machinery that makes
   agent work trustworthy (ADR 0002 §3, §5). Includes:
   - the red-proof check (new tests must fail against the base branch);
   - the tests-untouched-after-red check;
@@ -255,7 +255,7 @@ phase, the cloud account mirrors what the operating docs promise.
   to Slack. Done when: a planted failure in CI results in a Slack message
   within 1 minute.
 
-- [ ] **C9. Billing kill switch** *(author deploys; agent writes the
+- [~] **C9. Billing kill switch** *(author deploys; agent writes the
   function)* — budget → Pub/Sub → Cloud Run function that unlinks billing,
   on each project (DECISIONS §1). Done when: a simulated over-budget
   notification unlinks billing on the dev project, and re-linking restores
@@ -325,3 +325,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-11-18 | A12 (security posture) closed. |
 | 2026-11-18 | A10 (roadmap, `docs/roadmap.md`) and A13 (ways of working) closed, both approved by the author. Phase A is complete. |
 | 2026-11-18 | B1–B6, B8, B9 closed (PRs #27–#29, #32–#34, #36), each with a planted-bad-input drill; D1 (walking-skeleton module passes lint, type check and tests in CI) and D4 (CI red on a planted lint error, then green; PR #35, closed unmerged) closed. |
+| 2026-11-18 | B11 in progress: red proof, no-mixed-commits, failure-mode coverage (shrink-only baseline), executable docs, workflow policy, subagent definitions and the lock hook landed (#38–#41, #43), then were independently audited (#46). C9 in progress: function, tests and deploy script landed (#42); deploy and drill are the author's. |

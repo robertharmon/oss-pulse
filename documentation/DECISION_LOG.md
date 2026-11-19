@@ -1,6 +1,6 @@
 # Decision Log
 
-> **5 sessions**, most recent 2026-11-18. A session-indexed history of
+> **6 sessions**, most recent 2026-11-18. A session-indexed history of
 > the project organized by subsystem. Each entry summarizes the
 > motivating question and the outcome — read the linked session doc for
 > full detail.
@@ -14,6 +14,7 @@
 | 03 | 2026-10-06 | [A6 CONVENTIONS.md and the No-Local-Docker Decision](Session03_20261006_a6_conventions_and_no_local_docker.md) | Foundation & Governance |
 | 04 | 2026-11-11 | [Agentic Build-Out Setup, A7–A9, and the GH Archive URL Fix](Session04_20261111_agentic_build_out_setup.md) | Foundation & Governance / Infrastructure & Cloud |
 | 05 | 2026-11-18 | [Phase A Close-Out: Cost Model, Security, Ways of Working, Roadmap, Contract IDs](Session05_20261118_phase_a_close_out_cost_security_roadmap.md) | Foundation & Governance / Infrastructure & Cloud / Analytics & Modeling |
+| 06 | 2026-11-18 | [M1 Close, M2 Tooling and Verifiers, Kill Switch, ADR 0003](Session06_20261118_m1_close_m2_tooling_killswitch_adr0003.md) | Foundation & Governance / Infrastructure & Cloud / Data Ingestion / Orchestration & Observability |
 
 ---
 
@@ -96,6 +97,19 @@ CLAUDE.md, ADRs, session docs.
   14 blockers, mostly interactions between new and older decisions, all
   fixed before merge. Backlog: 14/14 Phase A.
 
+- **S06** `current` — What can be built before the author's account setup, and how do agent roles get enforced?
+  Closed M1 (architecture drift fix, tag `m1-done`) and built M2's
+  cloud-free parts: a uv workspace, ruff/mypy/pytest, sqlfluff,
+  SHA-pinned pre-commit with gitleaks, 12 CI jobs, CODEOWNERS without a
+  `*` rule, each gate drilled with a planted bad input. B11 verifiers:
+  failure-mode coverage with a shrink-only baseline, no-mixed-commits,
+  executable docs, workflow policy, and a red-proof check that runs a
+  PR's new tests against its stubs commit. After the author's "You are
+  the builder agent", added a lock hook that keys on the hook input's
+  `agent_id` to enforce agent roles, and moved all test-writing to a
+  test-writer agent. Its audit of the builder-written verifier tests
+  found 13 real gaps, all fixed in the scripts (195 tests).
+
 ## Subsystem: Infrastructure & Cloud
 
 Terraform, GCP resources, networking, IAM, Secret Manager, remote
@@ -116,12 +130,25 @@ state.
   $0.00–0.15/month. Security: credential inventory and rotation; the
   dashboard key as the one key file (DECISIONS §5 amended); CI's Slack
   webhook as an environment secret; a CI dev identity via WIF.
+- **S06** `built, not deployed` — How does spend get a hard stop?
+  The billing kill switch (C9): a Cloud Run function that unlinks billing
+  when a budget notification shows spend over the cap, simulate mode by
+  default, and a `deploy.sh` the author runs in Cloud Shell that applies
+  exactly the access matrix's four grants and can publish a drill
+  message. Tests by a test-writer agent (32), confirmed red by CI.
 
 ## Subsystem: Data Ingestion
 
 Fetchers, raw landing, Parquet schema, retries, backfill.
 
-- *(no entries yet)*
+- **S06** `design-only` — How do ingest and the build run, and how is history backfilled?
+  ADR 0003: Cloud Run jobs for both (ingest at `:15`, dbt at 01:30 UTC),
+  no platform retries. The first backfill design (widen expiration, then
+  restore) failed review on quotas, data-loss risk and one bad hour
+  blocking every build. Final: a raw backfill twin without expiration,
+  `stg_events` as a view, at most 4 eligible catch-up days per build, a
+  day eligible only once all its hours have ended, and ingest refusing
+  any load that would expire on arrival. 35 days at the cutover.
 
 ## Subsystem: Analytics & Modeling
 
@@ -140,37 +167,42 @@ decisions.
 
 Scheduling, retries, alerting, dashboards, consumer layer.
 
-- *(no entries yet)*
+- **S06** `design-only` — What triggers what?
+  Two Scheduler jobs call Cloud Run jobs' `:run` API with `run.invoker`
+  (runs, can't pass overrides); replays and backfills are author-started
+  executions. Scheduler timeouts became moot; the build's window is
+  capped so every build fits the 6 GiB per-identity quota.
 
 ---
 
 ## Current Outlook
 
-**Where we are:** Phase A is complete after **S05**. M1 has one item
-left (the `architecture.md` drift fix).
-- `main` is still at `baseline-pre-agentic`. It gets one "Rebase and
-  merge" from `build/agentic` at code-complete, before the prod cutover.
-- `docs/roadmap.md` is the plan and tracker: seven milestones, v1 about
-  the end of March 2027.
-- No cloud resources and no pipeline code exist yet.
+**Where we are:** M1 is done (`m1-done`). M2 is mostly done where it
+doesn't need the cloud, after **S06**.
+- `main` is still at `baseline-pre-agentic`.
+- `build/agentic` has the toolchain, 12 CI jobs, the B11 verifiers, the
+  agent definitions, a lock hook, the kill-switch code, and ADR 0003
+  applied across the docs.
+- No cloud resources exist yet.
 
 **What's open:**
+- **Next session, first:** confirm the lock hook denies the builder a
+  test-file write, and that the four agent types are registered (both
+  load at session start).
 - **Author actions** (`docs/author_setup.md`, in order):
-  1. Part 1: branch rules (there's no `build/agentic` ruleset yet), bot
-     accounts, repo security settings;
-  2. Part 2: the dev project, quota, agent identity and CI's dev
-     identity;
-  3. deploy the dev kill switch.
-- **Until the bot exists,** the agent works under the author's GitHub
-  login. That's fine for docs, but not for build work (ADR 0002).
+  1. Part 1: rulesets, bot accounts, repo security settings;
+  2. Part 2: dev project, quota, identities;
+  3. deploy and drill the dev kill switch;
+  4. make the 12 CI jobs required checks.
+- **B11 remaining:** the contract ↔ dbt diff (M4), the access matrix ↔
+  Terraform diff (M5), retention checks, and the required-check drills.
 
-**What's next:** the `architecture.md` drift fix and the `m1-done` tag,
-then M2 (scaffolding and verifier tooling), whose non-cloud parts don't
-wait on the author.
+**What's next:** M3 ingest code (ADR 0003 shape), test-first. It waits on
+M2's checks being required in the rulesets.
 
 **Review triggers:**
 - **ADR 0001:** the 2027-04-05 checkpoint, or the earlier triggers in the
   ADR.
-- **ADR 0002 and the security doc:** at the cutover, or if the kill
-  switch fires, or an agent PR weakens a check.
+- **ADR 0002, ADR 0003 and the security doc:** at the cutover, or if the
+  kill switch fires, or an agent PR weakens a check.
 - **Cost model:** by 2027-08-01, before alerting charges can start.

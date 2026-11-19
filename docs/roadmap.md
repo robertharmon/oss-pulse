@@ -121,13 +121,13 @@ identity) → kill switch live → anything that queries dev BigQuery.
   settings, `ci-alerts` environment (author_setup §1.1–1.4).
 - [ ] **Author setup Part 2:** dev project, quota, bucket, agent identity
   (C1/C2/C10 for dev), and **CI's dev identity and WIF pool** (§2.5).
-- [ ] **C9 kill switch, dev.** The agent writes the function and deploy
+- [~] **C9 kill switch, dev.** (Code, tests and deploy script done in #42; the author deploys and drills.) The agent writes the function and deploy
   script; the author deploys it and runs the drill. **Live before any
   agent BigQuery work in dev.**
 - [x] **B1–B6, B8, B9:** folder skeleton, `.gitignore`, Python and SQL
   toolchains, pre-commit (hooks pinned by SHA), CI jobs (actions pinned by
   SHA), PR template, CODEOWNERS.
-- [ ] **B11 verifier tooling.** The checks:
+- [~] **B11 verifier tooling.** (Done: red proof, no-mixed-commits, failure-mode coverage, executable docs, workflow policy incl. `pull_request_target`, subagent definitions, lock hook (#38–#41, #43, #46). Left: contract ↔ `schema.yml` (M4) and access matrix ↔ Terraform (M5) diffs, retention and dev-dataset checks, and the required-check drills, which need author setup Part 1.) The checks:
   - red proof against the stubs commit, assertion failures only;
   - no mixed test/non-test commits;
   - failure-mode coverage;
