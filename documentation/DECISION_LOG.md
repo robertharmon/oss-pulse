@@ -1,6 +1,6 @@
 # Decision Log
 
-> **4 sessions**, most recent 2026-11-11. A session-indexed history of
+> **5 sessions**, most recent 2026-11-18. A session-indexed history of
 > the project organized by subsystem. Each entry summarizes the
 > motivating question and the outcome — read the linked session doc for
 > full detail.
@@ -13,6 +13,7 @@
 | 02 | 2026-10-05 | [A5 Architecture Doc and Session-01 Docs Rescue](Session02_20261005_a5_architecture_doc.md) | Foundation & Governance |
 | 03 | 2026-10-06 | [A6 CONVENTIONS.md and the No-Local-Docker Decision](Session03_20261006_a6_conventions_and_no_local_docker.md) | Foundation & Governance |
 | 04 | 2026-11-11 | [Agentic Build-Out Setup, A7–A9, and the GH Archive URL Fix](Session04_20261111_agentic_build_out_setup.md) | Foundation & Governance / Infrastructure & Cloud |
+| 05 | 2026-11-18 | [Phase A Close-Out: Cost Model, Security, Ways of Working, Roadmap, Contract IDs](Session05_20261118_phase_a_close_out_cost_security_roadmap.md) | Foundation & Governance / Infrastructure & Cloud / Analytics & Modeling |
 
 ---
 
@@ -85,6 +86,16 @@ CLAUDE.md, ADRs, session docs.
   hour, which turned the contract's ~35% missing-hour rate into 72/72
   present. Backlog: 10/14 Phase A.
 
+- **S05** `current` — What's left between the docs and a build agents can run against?
+  Closed Phase A: A11 cost model, A12 security posture, A13 ways of
+  working, A10 roadmap (seven milestones to v1, approved), plus stable
+  contract IDs (FM-01…FM-20, R-01…R-07, M-01…M-07). The author chose one
+  promotion of `build/agentic` into `main`, made at code-complete and
+  before the cutover, because prod deploys only from `main`. Commits
+  stay authored by Robert under the bot. Four independent reviews found
+  14 blockers, mostly interactions between new and older decisions, all
+  fixed before merge. Backlog: 14/14 Phase A.
+
 ## Subsystem: Infrastructure & Cloud
 
 Terraform, GCP resources, networking, IAM, Secret Manager, remote
@@ -97,6 +108,14 @@ state.
   with prod CI identities gated by author-approved GitHub Environments
   and WIF pinned to the repo's numeric ID. Rejected the BigQuery
   no-billing sandbox (no DML, 10 GiB lifetime storage, 60-day expiry).
+- **S05** `design-only` — What does it cost, and what must the security posture cover?
+  Measured volumes (87.7 MB/day gzipped, 92% payload) and verified live
+  prices. Found that the 10 MB-per-query billing minimum counts against
+  the daily quota, so the hourly dbt build was replaced by hourly ingest
+  plus a daily build: ~2–4 GB/day instead of 35–56. Expected spend is
+  $0.00–0.15/month. Security: credential inventory and rotation; the
+  dashboard key as the one key file (DECISIONS §5 amended); CI's Slack
+  webhook as an environment secret; a CI dev identity via WIF.
 
 ## Subsystem: Data Ingestion
 
@@ -109,7 +128,13 @@ Fetchers, raw landing, Parquet schema, retries, backfill.
 dbt staging / intermediate / marts, data quality tests, lineage, grain
 decisions.
 
-- *(no entries yet)*
+- **S05** `design-only` — What exactly will the tests hold the pipeline to?
+  Retention per table (raw and staging 3 days, facts 400, snapshot marts
+  30), `insert_overwrite` incrementals, NOT NULL as schema constraints,
+  and a daily build that catches up late or failed days from
+  `raw_ingest_audit`. Twenty failure modes with a retry/alert rule
+  (availability vs content), seven balancing counts and seven
+  metamorphic relations, each with a stable ID for the coverage check.
 
 ## Subsystem: Orchestration & Observability
 
@@ -121,37 +146,31 @@ Scheduling, retries, alerting, dashboards, consumer layer.
 
 ## Current Outlook
 
-**Where we are:** Agentic build-out, milestone 1 (remaining foundation
-docs), after **S04**.
-- `main` is tagged `baseline-pre-agentic`. All agent work lands on
-  `build/agentic` through reviewed PRs.
-- ADR 0002 sets the operating model: bot identities, a billed-but-capped
-  dev project, and test-first development plus verifiers.
-- Phase A is 10/14 complete.
+**Where we are:** Phase A is complete after **S05**. M1 has one item
+left (the `architecture.md` drift fix).
+- `main` is still at `baseline-pre-agentic`. It gets one "Rebase and
+  merge" from `build/agentic` at code-complete, before the prod cutover.
+- `docs/roadmap.md` is the plan and tracker: seven milestones, v1 about
+  the end of March 2027.
 - No cloud resources and no pipeline code exist yet.
 
 **What's open:**
 - **Author actions** (`docs/author_setup.md`, in order):
-  1. branch rules (`main` requires approval; protect `build/agentic`);
-  2. answer `QUESTIONS.md` Q1 (commit attribution under a bot);
-  3. the bot accounts;
-  4. the dev project and kill switch.
-- **Milestone 1 remaining:**
-  - A11 cost model (in progress; retention must replace "keep forever");
-  - A12 security posture;
-  - A13 ways of working;
-  - A10 roadmap (folds in the A10 inputs list);
-  - contract additions (failure-mode IDs, `raw_ingest_audit`,
-    reconciliation and metamorphic sections).
-- **Deferred:** the milestone-promotion method (OPEN_LOOPS), decided
-  before the first promotion to `main`.
+  1. Part 1: branch rules (there's no `build/agentic` ruleset yet), bot
+     accounts, repo security settings;
+  2. Part 2: the dev project, quota, agent identity and CI's dev
+     identity;
+  3. deploy the dev kill switch.
+- **Until the bot exists,** the agent works under the author's GitHub
+  login. That's fine for docs, but not for build work (ADR 0002).
 
-**What's next:** Finish A11, then milestone 2: scaffolding plus verifier
-tooling (B1–B6, B8, B9, B11), once the bot identities exist.
+**What's next:** the `architecture.md` drift fix and the `m1-done` tag,
+then M2 (scaffolding and verifier tooling), whose non-cloud parts don't
+wait on the author.
 
 **Review triggers:**
-- **ADR 0001:** spend over $5 for 3 consecutive months; a role change;
-  deprecation or free-tier removal of a chosen service; the 2027-04-05
-  checkpoint.
-- **ADR 0002:** the kill switch fires; an agent PR weakens a check; the
-  author's review queue becomes the bottleneck; cutover.
+- **ADR 0001:** the 2027-04-05 checkpoint, or the earlier triggers in the
+  ADR.
+- **ADR 0002 and the security doc:** at the cutover, or if the kill
+  switch fires, or an agent PR weakens a check.
+- **Cost model:** by 2027-08-01, before alerting charges can start.
