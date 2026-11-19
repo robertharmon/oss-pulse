@@ -22,9 +22,16 @@ TEST_PATH_PATTERNS: tuple[str, ...] = (
 )
 
 
+def _matches(path: str, pattern: str) -> bool:
+    # fnmatch's `*` already crosses `/`, so "tests/**" means "anything under
+    # tests/". A `**/` can also match no folder at all, as in a glob.
+    if fnmatch.fnmatchcase(path, pattern):
+        return True
+    return "**/" in pattern and fnmatch.fnmatchcase(path, pattern.replace("**/", "", 1))
+
+
 def is_test_path(path: str) -> bool:
-    # fnmatch's `*` already crosses `/`, so "tests/**" means "anything under tests/".
-    return any(fnmatch.fnmatchcase(path, pattern) for pattern in TEST_PATH_PATTERNS)
+    return any(_matches(path, pattern) for pattern in TEST_PATH_PATTERNS)
 
 
 def classify_commit(paths: Iterable[str]) -> str:
