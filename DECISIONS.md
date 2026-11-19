@@ -113,16 +113,20 @@ Specifics for oss-pulse:
 Zero secrets in the repo. Ever. Not in `.env` files, not in
 `terraform.tfvars`, not in notebook outputs, not in commit messages.
 
-- All secrets live in Google Secret Manager
+- Pipeline secrets live in Google Secret Manager. The exceptions, each
+  listed with its reason in `docs/security.md` §3: the dashboard key
+  (Streamlit secrets), CI's Slack webhook (a GitHub Actions environment
+  secret), and the bot's GitHub token (the agent machine's keyring)
 - CI reads them from GitHub Actions secrets, scoped per environment
 - Local dev reads them via `gcloud secrets versions access` — never from a
   file
 - `gitleaks` runs as a pre-commit hook and as a CI job; a secret-shaped
   string blocks the commit
-- Service account keys are not downloaded. Workload Identity Federation is
+- Service account keys are not created. Workload Identity Federation is
   used wherever possible. **One exception:** the Streamlit dashboard's
   read-only key, because Streamlit Community Cloud can't use WIF. It's
-  created in Cloud Shell, lives only in Streamlit's app secrets (a Secret
+  created in Cloud Shell, never leaves it except into Streamlit's app
+  secrets (a Secret
   Manager copy would be one more place to leak, with nothing to read it),
   and rotates every 90 days. See `docs/security.md` §3.1.
 

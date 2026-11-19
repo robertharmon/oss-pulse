@@ -11,8 +11,10 @@ This is a solo portfolio project. Expect an acknowledgement within about a
 week. There's no bug bounty.
 
 All data this project processes is public GitHub activity from
-[GH Archive](https://www.gharchive.org/). If you'd like your GitHub handle
-removed from this project's tables, use the same private channel.
+[GH Archive](https://www.gharchive.org/). If you'd like your GitHub
+activity excluded from this project, use the same private channel. We'll
+stop showing it and drop it from our tables; remaining copies age out
+within 14 days. GH Archive itself is a separate service.
 
 How the project handles credentials, data and disclosure:
 [`docs/security.md`](docs/security.md).

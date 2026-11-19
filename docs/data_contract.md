@@ -246,6 +246,9 @@ backfill, debugging, and schema-drift detection.
     (`BETWEEN TIMESTAMP("2015-01-01") AND CURRENT_TIMESTAMP() +
     INTERVAL 1 HOUR`); rows outside the window are dropped and
     counted in a load-audit view.
+  - Events by an actor on the `actor_suppressions` seed, or on a repo
+    whose owner is one, are dropped (removal requests,
+    [`security.md`](security.md) §2.2).
   - `payload` stays as JSON.
   - `payload_action` (STRING, nullable) is extracted from
     `payload.action` here, once. `fct_events` reads it instead of the JSON,
@@ -379,6 +382,7 @@ feed — see §4.3. README wording drift tracked in §8.)
   | Column | Type | Notes |
   |---|---|---|
   | `repo_id` | INT64 | FK → `dim_repos`. |
+  | `repo_name` | STRING | Copied from `dim_repos` at build time, so the dashboard reads marts only (§6.1). |
   | `as_of_date` | DATE | Snapshot day. |
   | `stars_7d` | INT64 | WatchEvent count over 7 days ending `as_of_date`. |
   | `prs_opened_7d` | INT64 | `fct_events.is_pr_opened` count over same window. |
@@ -431,6 +435,7 @@ rather than contributors-who-commit. README wording drift tracked in §8.
   | Column | Type | Notes |
   |---|---|---|
   | `repo_id` | INT64 | FK → `dim_repos`. |
+  | `repo_name` | STRING | Copied from `dim_repos` at build time, so the dashboard reads marts only (§6.1). |
   | `as_of_date` | DATE | Snapshot day. |
   | `distinct_pr_openers_90d` | INT64 | Distinct `actor_id` with `is_pr_opened = true` on this repo over trailing 90 days. |
   | `total_prs_opened_90d` | INT64 | Count of `is_pr_opened` events on this repo over trailing 90 days. |
@@ -595,3 +600,4 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-11-18 | §8 README wording drift marked resolved (README reworded to match §5). |
 | 2026-11-18 | Applied the cost model's approved decisions ([`cost_model.md`](cost_model.md) §8): `not_null` becomes a schema constraint (§1, §3.3, §4.1); daily dbt cadence with 28h freshness on everything below raw, including the three marts that had 24h (§4.2–§5.6, §6.2); retention per table (raw and `stg_events` 3 days, `fct_events` 400 days, snapshot marts 30 days, dims kept) with `full_refresh: false` on long-lived tables; `insert_overwrite` incrementals; `stg_events.payload_action` added; snapshot marts partitioned on `as_of_date`; dashboard loads each mart once and caches (§6.1). |
 | 2026-11-18 | §8 PII posture and language-lookup token marked resolved by `security.md` §2.2 and §3.2. |
+| 2026-11-18 | §5.3, §5.5: `repo_name` added to the two repo-level marts (additive), so the dashboard needn't read `dim_repos`. §4.2: `actor_suppressions` filter for removal requests. |
