@@ -99,7 +99,11 @@ Pulled from `DECISIONS.md` §9 — treat as muscle memory:
   No direct pushes to `main` — the `protect-main` GitHub ruleset enforces
   this (verified via smoke test).
 - **During the agentic build-out:** feature branches start from, and PRs
-  target, `build/agentic`, not `main`. Only milestone PRs target `main`.
+  target, `build/agentic`, not `main`. Nothing targets `main` until the
+  build-out is done: then one PR, merged with "Rebase and merge"
+  (ADR 0002 §4). Milestones are marked with `m<N>-done` tags instead.
+- **Commit authorship:** commits are authored as Robert (`git config
+  user.name/email`), even when the bot account pushes them.
 - **Branch names:** `type/short-slug` — e.g. `docs/adr-0005-schema`,
   `feat/hourly-ingest`, `fix/sqlfluff-trailing-comma`,
   `chore/add-make-targets`.

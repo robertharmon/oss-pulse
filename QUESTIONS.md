@@ -27,7 +27,11 @@ Format:
 
 ## Open
 
-### Q1. How should commits be attributed once the bot account pushes?  (opened 2026-11-11, blocks: `docs/author_setup.md` 1.2 step 4)
+_(none)_
+
+## Answered
+
+### Q1. How should commits be attributed once the bot account pushes?  (opened 2026-11-11, answered 2026-11-18)
 **Context:** DECISIONS §9 says the author of a commit is Robert. With the
 bot pushing branches and squash-merging PRs into `build/agentic`, GitHub
 will show the bot as the PR author and merger. Squash-merge commits are
@@ -47,8 +51,5 @@ the commit author.
   merge. Cost: every PR waits on Robert, which undoes the "agent merges"
   decision.
 
-**Answer:** _(author fills in)_
-
-## Answered
-
-_(none yet)_
+**Answer (2026-11-18):** (a). Recorded in DECISIONS §9 and
+`docs/author_setup.md` §1.3 step 5.

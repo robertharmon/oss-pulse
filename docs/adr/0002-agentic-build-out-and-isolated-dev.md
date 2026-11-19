@@ -93,8 +93,8 @@ other environment.
   and deletion from the start. Required CI checks are added as they exist
   (B11). The bot has no bypass.
 - **`main` requires one approving review** from the author (code owner of
-  `*`). The bot, a Write collaborator, can open milestone PRs but can't
-  merge them.
+  `*`). The bot, a Write collaborator, can open a PR into `main` but can't
+  merge it.
 - **CODEOWNERS plus required code-owner review** for every file that
   defines or could weaken a check:
   - `.github/**`, including `CODEOWNERS` itself;
@@ -120,15 +120,27 @@ other environment.
 
 - `main` was tagged `baseline-pre-agentic` before any agent work began.
 - Agents branch from `build/agentic` and squash-merge into it.
-- The author decides when and how a milestone is promoted to `main`.
-  - Squash-merging a long-lived branch into `main` more than once makes
-    git re-show already-merged changes.
-  - The promotion method (merge commit, or resetting `build/agentic` to
-    `main` after each squash) is decided before the first promotion, and
-    tracked in `OPEN_LOOPS.md`.
+- **One promotion, at the end** (decided 2026-11-18). `build/agentic` is
+  not promoted to `main` milestone by milestone. It's merged once, when the
+  project is essentially complete and the author is satisfied with it.
+  Until then `main` stays exactly at `baseline-pre-agentic`: a working
+  snapshot of the repo before the agentic approach, to fall back to.
+  - **Method: one PR from `build/agentic` into `main`, merged with "Rebase
+    and merge."** `main` hasn't moved since the branch was cut, so this
+    replays each agent PR's squash commit onto `main` in order. `main`
+    stays linear (DECISIONS §9) and keeps the per-PR history a reviewer
+    can follow. A single squash would collapse the whole build-out into
+    one unreadable commit.
+  - This removes the repeated-squash problem the earlier wording worried
+    about, since there's only one promotion.
+- **Milestone review without promotion.** At the end of each milestone the
+  agent tags the `build/agentic` tip `m<N>-done` and gives the author a
+  GitHub compare link from the previous milestone's tag (or the baseline)
+  to it, plus a short walkthrough. The author reviews that range; findings
+  become PRs into `build/agentic`.
 - Abandoning the effort means deleting `build/agentic` (locally and on
-  GitHub). `main` and the baseline tag are untouched until a milestone is
-  promoted.
+  GitHub). `main` and the baseline tag are untouched until the final
+  merge.
 
 ### 5. Correctness comes from test-first development plus verifiers
 

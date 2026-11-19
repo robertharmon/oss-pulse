@@ -26,16 +26,6 @@ Status markers:
   branches get cleaned up on every `git fetch`, no `--prune` flag needed.
   (Global config change; not a repo-local setting.)
 
-## Decisions to revisit
-
-- [ ] **Pick the milestone-promotion method before the first `build/agentic`
-  → `main` promotion.** Squash-merging a long-lived branch into `main`
-  twice makes git re-show already-merged changes (the second promotion
-  conflicts). Options: merge commits for milestone PRs (needs a DECISIONS
-  §9 note), or squash and then reset `build/agentic` to `main` after each
-  promotion. The author deferred this on 2026-11-11 ("stay on the branch
-  for now"). See ADR 0002 §4.
-
 ## Docs reconciliation
 
 - [ ] **Reconcile README's four questions with `docs/data_contract.md`
