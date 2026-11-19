@@ -19,6 +19,7 @@ red-proof checks are the backstop):
 
 import json
 import os
+import posixpath
 import sys
 from typing import Any
 
@@ -30,14 +31,19 @@ _HIDDEN_FROM_SPEC_RECONSTRUCTOR = ("docs/", "documentation/")
 
 
 def _relative(path: str, project_dir: str) -> str | None:
-    """`path` relative to the project with forward slashes, or None if outside it."""
+    """`path` relative to the project with forward slashes, or None if outside it.
+
+    `..` segments are resolved first, so `ingest/../tests/x.py` is a test path.
+    The project root itself is ``"."``.
+    """
+    root = posixpath.normpath(project_dir.replace("\\", "/"))
     path = path.replace("\\", "/")
-    root = project_dir.replace("\\", "/").rstrip("/")
     is_absolute = path.startswith("/") or (len(path) > 1 and path[1] == ":")
-    if not is_absolute:
-        return path.removeprefix("./")
-    if path.lower().startswith(root.lower() + "/"):
-        return path[len(root) + 1 :]
+    full = posixpath.normpath(path if is_absolute else f"{root}/{path}")
+    if full.lower() == root.lower():
+        return "."
+    if full.lower().startswith(root.lower() + "/"):
+        return full[len(root) + 1 :]
     return None
 
 
@@ -78,7 +84,11 @@ def _check_spec_reconstructor_read(
         if not isinstance(candidate, str):
             continue
         rel = _relative(candidate, root)
-        if rel is not None and (rel + "/").startswith(_HIDDEN_FROM_SPEC_RECONSTRUCTOR):
+        if rel is None:
+            continue
+        # A search rooted at the project includes docs/ too.
+        searches_root = rel == "." and tool_name in {"Grep", "Glob"}
+        if searches_root or (rel + "/").startswith(_HIDDEN_FROM_SPEC_RECONSTRUCTOR):
             return "The spec-reconstructor works from code only; docs/ is off limits."
     return None
 
