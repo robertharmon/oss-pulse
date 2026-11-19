@@ -13,7 +13,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-_FENCE_OPEN = re.compile(r"^```(bash|sh)\s+(run|syntax-only)\s*$")
+# A fence may be indented, e.g. inside a list item; group 1 is the indent.
+_FENCE_OPEN = re.compile(r"^( *)```(bash|sh)\s+(run|syntax-only)\s*$")
 
 
 @dataclass(frozen=True)
@@ -35,12 +36,16 @@ def extract_blocks(path: str, markdown: str) -> list[DocBlock]:
             index += 1
             continue
         start = index
+        indent = len(opener.group(1))
         body: list[str] = []
         index += 1
-        while index < len(lines) and not lines[index].startswith("```"):
-            body.append(lines[index])
+        while index < len(lines) and not lines[index].lstrip(" ").startswith("```"):
+            line = lines[index]
+            # CommonMark: remove up to the fence's indentation from each line.
+            removable = len(line) - len(line.lstrip(" "))
+            body.append(line[min(indent, removable) :])
             index += 1
-        blocks.append(DocBlock(path, start + 1, opener.group(2), "".join(body)))
+        blocks.append(DocBlock(path, start + 1, opener.group(3), "".join(body)))
         index += 1
     return blocks
 
