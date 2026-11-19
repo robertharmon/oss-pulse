@@ -150,14 +150,29 @@ gcloud iam service-accounts add-iam-policy-binding $SA --project=$PROJECT \
   `roles/serviceusage.serviceUsageConsumer`. The agent will say so in
   `QUESTIONS.md`.
 
-### 2.3 Kill switch (after the agent delivers the function, backlog C9)
-The agent writes the function and a deploy script. You deploy it from
-Cloud Shell, because it needs billing permissions the agent must never
-hold.
-- It starts in **simulate mode** (logs only).
-- Run the drill, then switch it live.
-- Note: Google's design unlinks billing on the project the function runs
-  in, so it also shuts itself off. That's expected.
+### 2.3 Kill switch (backlog C9)
+The function is in `killswitch/`; deploy it from Cloud Shell with
+`killswitch/deploy.sh`, because it needs billing permissions the agent must
+never hold. The script enables the APIs, creates `osp-killswitch-dev`,
+applies exactly the access matrix's four grants, and deploys the function
+on the `osp-budget-dev` topic.
+
+1. **Deploy in simulate mode** (logs only), then **drill**:
+   ```bash syntax-only
+   git clone https://github.com/robertharmon/oss-pulse && cd oss-pulse
+   git switch build/agentic && cd killswitch
+   ./deploy.sh deploy oss-pulse-dev-<yyyy> dev simulate
+   ./deploy.sh drill  oss-pulse-dev-<yyyy> dev
+   ```
+   **Done when** the function's log shows `kill switch: simulated` with
+   `cost_amount: 99.0`.
+2. **Switch it live** (same command, `live` instead of `simulate`).
+   Optionally drill again to watch billing unlink, then re-link billing in
+   the Console (Billing → Account management). The function itself stops
+   too when billing unlinks; that's Google's design and expected.
+
+**Done when** (backlog C9): the live drill unlinks billing on the dev
+project, and re-linking restores it.
 
 ### 2.4 Agent's machine
 1. Install the Google Cloud CLI.
