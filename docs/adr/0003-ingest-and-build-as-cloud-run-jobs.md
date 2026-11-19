@@ -1,6 +1,6 @@
 # ADR 0003 — Ingest and build run as Cloud Run jobs; schedule, retries and backfill
 
-> **Status:** Proposed
+> **Status:** Accepted (2026-11-18: jobs; 35-day backfill as designed)
 > **Date:** 2026-11-18
 > **Authors:** Robert Harmon
 

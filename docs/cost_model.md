@@ -81,7 +81,8 @@ allowance.**
 | BigQuery DML (`MERGE`, `INSERT`) | Counted as query bytes | — | A `MERGE` with `UPDATE`/`DELETE` bills the source **plus the target's touched partitions** (the whole target if it isn't partitioned) |
 | GCS Standard storage | 5 GB-month (us-central1, us-east1, us-west1 combined) | Billing account | $0.02/GiB-month. Soft-deleted objects are billed too. |
 | GCS operations | 5,000 Class A, 50,000 Class B | Billing account | — |
-| Cloud Run (request-based) | 180,000 vCPU-s, 360,000 GiB-s, 2M requests | Billing account | $0.000024/vCPU-s |
+| Cloud Run jobs (ingest, dbt; ADR 0003) | 240,000 vCPU-s, 450,000 GiB-s | Billing account | $0.000018/vCPU-s |
+| Cloud Run (request-based; the kill-switch function) | 180,000 vCPU-s, 360,000 GiB-s, 2M requests | Billing account | $0.000024/vCPU-s |
 | Cloud Scheduler | **3 jobs** (paused jobs count) | Billing account | $0.10/job per 31 days |
 | Secret Manager | 6 active versions, 10,000 accesses | Billing account | $0.06/version-month |
 | Cloud Build | 2,500 build-minutes (e2-standard-2, default pool) | Billing account | $0.006/min |
@@ -194,10 +195,11 @@ missed:
 - **`full_refresh: false` on `fct_events`, the dims and the snapshot
   marts.** With 3-day staging, a full refresh would rebuild 400 days of
   history from 3 days of data and wipe the rest.
-- **Scheduler → dbt timeouts:** Scheduler's HTTP `attempt_deadline`
-  (default 180 s, max 30 min) and the Cloud Run request timeout (default
-  300 s) must both exceed the build time. Keep `retry_count` at 0, or a
-  retry starts a second full build.
+- **Scheduler timeouts are moot for jobs** (ADR 0003): the `:run` call
+  returns when the execution starts. Keep Scheduler `retry_count` and the
+  job's `max-retries` at 0, or a retry starts a second full build. (This
+  replaces the earlier rule that Scheduler's `attempt_deadline` and a
+  service's request timeout had to outlast the build.)
 
 ### 4.5 Quota values
 
@@ -223,7 +225,8 @@ Quotas reset at **midnight Pacific**, not UTC. The proposed build time,
 |---|---|---|---|
 | GCS Parquet (`osp-raw-events-<env>`) | 14 days (dev: 7) | Bucket lifecycle rule, **soft delete off** | Re-download from GH Archive |
 | `raw_gharchive_events` | 3 days | Partition expiration | Reload from GCS (free load job) or GH Archive |
-| `stg_events` | 3 days | Partition expiration | Rebuilt from raw by the next build |
+| `stg_events` | None: a view since ADR 0003 | — | Nothing stored |
+| `raw_gharchive_events_backfill` | Only during a backfill | Dropped by the author afterwards (ADR 0003 §3) | Re-download from GH Archive |
 | `fct_events` | 400 days | Partition expiration; `full_refresh: false` | Backfill from GH Archive (§5.3) |
 | `stg_repos`, `stg_actors` | Rolling 3-day window | Rebuilt each build | Rebuilt from `stg_events` |
 | `dim_repos`, `dim_actors` | Keep | `full_refresh: false` | Backfill. `fct_events` has no `repo_name` or `actor_login`, so dims can't be rebuilt from it. |
@@ -265,18 +268,16 @@ raw and staging turn over 0.4–1 GB a day. §9 measures before choosing.
 54% larger than GH Archive's own gzip. At 30 days of Oct-high volume that's
 the difference between 6.5 GB and 10.1 GB in the bucket.
 
-### 5.3 Backfill is limited by retention and quota
+### 5.3 Backfill (decided in ADR 0003)
 
-- **Retention:** BigQuery expires a partition immediately if it's older
-  than the table's expiration when it's written. Loading a 60-day-old hour
-  into raw (3-day expiration) deletes it on arrival, and the same happens
-  to its `stg_events` partition. Backfill needs a separate path: a
-  temporary raw table and staging model without expiration, or raising the
-  expiration for the duration of the backfill. Replaying any hour older
-  than 3 days hits the same limit. The ingest ADR picks the method.
-- **Quota:** staging a backfilled day bills ~0.4 GB (Nov). 90 days is
-  ~37 GB of staging alone. At the 6 GiB per-user cap, that's 7 or more
-  days of builds, or a temporary quota raise that only the author can make.
+- **Path:** backfilled hours load into `raw_gharchive_events_backfill`, a
+  raw twin with no expiration; `stg_events` is a view over both, so
+  nothing expires mid-backfill.
+- **Quota:** each build takes yesterday plus at most 4 catch-up days, about
+  5 GB at October-high volumes, under the 6 GiB per-identity quota. A
+  35-day backfill builds itself over about 9 nights with no quota change.
+- **Storage:** the twin holds ~14 GB (November) to 36 GB (October-high)
+  until dropped, plus 3–8 GB more in GCS for 14 days: a few cents.
 
 ## 6. Everything else (option A, prod + dev)
 
@@ -412,3 +413,4 @@ if:
 |---|---|
 | 2026-11-18 | Initial version (A11). Measured volumes, verified prices, query and storage model, four proposals (§8). Revised after independent review: incremental-write and dimension costs, snapshot-mart growth, GCS soft delete, backfill expiration, full-refresh guard, 28h freshness, per-user quota 6 GiB. |
 | 2026-11-18 | §8 proposals approved by the author (option A cadence, retention, NOT NULL in schema, dashboard load-once + cache). |
+| 2026-11-18 | ADR 0003 applied: jobs free tier (§3); Scheduler timeout rule moot (§4.4); `stg_events` is a view and the backfill twin (§5.1); §5.3 rewritten. |

@@ -23,9 +23,9 @@ GitHub event for that hour), validates the batch with Great Expectations,
 writes it to GCS as a Zstandard-compressed Parquet file, loads it into a
 raw BigQuery table with a free load job, and records the attempt in an
 audit table. Once a day, at 01:30 UTC, a second Scheduler job starts
-**dbt** on Cloud Run (a service or a job; the ingest ADR decides which).
-It runs `dbt build` for yesterday, plus any earlier day still in raw that
-changed or failed since its last build. That transforms
+the **dbt** Cloud Run job. It runs `dbt build` for yesterday, plus at most
+four earlier days that changed or failed since their last build. Both run
+as Cloud Run jobs ([ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md)). That transforms
 raw events through staging and core tables into four mart tables:
 trending repos, language share, contributor concentration, and
 time-of-day activity. A Streamlit app on Streamlit Community Cloud reads
@@ -67,7 +67,7 @@ are listed in §2 under "Infra".
           │                                                  │ reads
           ▼                                                  │ (BigQuery only)
  ┌──────────────────────────────────┐                        │
- │ dbt on Cloud Run (service or job)│◀───────────────────────┘
+ │ Cloud Run job: dbt               │◀───────────────────────┘
  │  `dbt build` for the build's     │
  │  window: yesterday + catch-up    │
  │  days (data contract §1)         │
@@ -76,7 +76,7 @@ are listed in §2 under "Infra".
                 ▼
  ┌────────────────────────────────────────────────────────────┐
  │ BigQuery osp_staging_<env>                                 │
- │   stg_events (3 days; latest successful attempt per hour,  │
+ │   stg_events (a view; latest successful attempt per hour,  │
  │   suppressions, dedupe), stg_repos, stg_actors             │
  │                         │                                  │
  │                         ▼                                  │
@@ -117,7 +117,8 @@ are listed in §2 under "Infra".
              builder and CI identities).
 
  Deploy:     no Dockerfile (DECISIONS §10). `gcloud run deploy --source`
-             has Cloud Build build each image with buildpacks and store it
+             (`gcloud run jobs deploy --source` for ingest and dbt) has
+             Cloud Build build each image with buildpacks and store it
              in Artifact Registry (keep the 2 newest). Deploys run from
              `main` only, through the author-approved `prod-deploy`
              GitHub environment.
@@ -247,7 +248,7 @@ alerts per contract §3.3. A replay is a manual call to ingest for that hour
 (RUNBOOK §3.1), and the next daily build catches its day up (FM-17). A
 replay only works while the whole day is still in raw: ingest refuses a
 day whose first hour is more than 70 hours old (FM-13); older days go
-through the backfill path.
+through the backfill path (ADR 0003 §3).
 
 ## 6. Failure boundaries
 
@@ -312,8 +313,8 @@ policies are in the [security doc](security.md).
 - **Credentials, data classes, disclosure:** [`security.md`](security.md).
 - **Cadence, retention, quotas, spend:** [`cost_model.md`](cost_model.md).
 - **What to do when something breaks:** [`RUNBOOK.md`](../RUNBOOK.md).
-- **Ingest schedule minute, backfill, dbt as service or job:** the ingest
-  ADR (roadmap M3).
+- **Runtime shape, schedule minute, retries, backfill:**
+  [ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md).
 
 ## 9. Review date
 
@@ -332,3 +333,4 @@ Otherwise, re-read alongside ADR 0001 at its 2027-04-05 checkpoint.
 |---|---|
 | 2026-10-05 | Initial version (A5). |
 | 2026-11-18 | Drift fix (roadmap M1): hourly ingest plus a daily dbt build from its own Scheduler job; ingest no longer invokes dbt; Great Expectations in ingest; Zstandard Parquet; retention per table instead of "keep forever"; measured file sizes and publication time; no `PushEvent` in the trace; retries inside ingest, not Cloud Run or Scheduler; no Dockerfile story (DECISIONS §10); `raw_ingest_audit`, the language lookup and the kill switch added; security summary aligned with the access matrix (dbt never reads GCS, no reviewer identity, author is Owner, dashboard key in Streamlit secrets); pointers to the docs that now exist. |
+| 2026-11-18 | ADR 0003 applied: ingest and dbt are Cloud Run jobs; `stg_events` is a view; build window capped at 4 catch-up days. |

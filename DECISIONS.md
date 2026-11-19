@@ -229,7 +229,8 @@ spawns a test before the fix merges.
 **No local Docker.** The pipeline is deployed as a container, but the
 container is built by Google, not by us.
 
-- **Deploy mode:** `gcloud run deploy --source .` — Cloud Run's
+- **Deploy mode:** `gcloud run jobs deploy --source` for ingest and dbt
+  (ADR 0003), `gcloud functions deploy --source` for the kill switch. Cloud Run's
   Buildpacks path. Google reads `pyproject.toml`, builds the image in
   Cloud Build, pushes to Artifact Registry, deploys to Cloud Run. No
   `Dockerfile` in the repo.
@@ -279,3 +280,4 @@ Anything in this list requires its own ADR before scope changes.
 | 2026-11-11 | §1: separated hard spend caps (billing kill switch, query quota, dev table expiration) from notification-only budget alerts. §1/§3/§4: dev and prod split into two billed, capped GCP projects; agents reach dev only, through their own bot identity. | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
 | 2026-11-18 | §9: one final `build/agentic` → `main` promotion via "Rebase and merge" (no per-milestone promotions); commits stay authored by Robert when the bot pushes (QUESTIONS Q1 answer). | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
 | 2026-11-18 | §5: dashboard read-only key named as the one key-file exception (Streamlit secrets only, 90-day rotation), replacing "keys live in Secret Manager". | — |
+| 2026-11-18 | §10: deploy commands updated for Cloud Run jobs (ADR 0003). | [0003](docs/adr/0003-ingest-and-build-as-cloud-run-jobs.md) |

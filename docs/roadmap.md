@@ -166,7 +166,7 @@ checks required, the settings deny rules, and CODEOWNERS approvals.
 
 ### M3 — Ingest
 
-- [ ] **Ingest ADR.** Done when the author has approved it. It decides:
+- [x] **Ingest ADR** ([ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md), accepted 2026-11-18). It decides:
   - the Scheduler minute: files went live at `:05:03`–`:05:04` on every
     hour sampled, so `:05` has no margin, and `:15` is the first
     candidate;
@@ -219,7 +219,7 @@ approvals.
   - datasets with expiration;
   - service accounts and grants exactly as the access matrix says;
   - empty secret shells;
-  - Cloud Run services, two Scheduler jobs (plus the language lookup if
+  - the two Cloud Run jobs, two Scheduler jobs (plus the language lookup if
     its ADR needs one), the alert policy;
   - the Artifact Registry repo with its cleanup policy;
   - labels (cost model §10).
@@ -249,7 +249,7 @@ and its key are created.
 
 ### M7 — Deploy, operations, cutover
 
-- [ ] **Deploy workflow.** Deploys both services from `main` through
+- [ ] **Deploy workflow.** Deploys both Cloud Run jobs from `main` through
   `prod-deploy`, with `--source` (DECISIONS §10). First runs at the
   cutover.
 - [ ] **Alerting.** The prod log-based alert policy to the hand-made Slack
@@ -354,3 +354,4 @@ gates are required checks, and no cutover before every gate is green.
 | 2026-11-18 | Initial version (A10). Folds in the A10 inputs from `FOUNDATION_BACKLOG.md`. Revised after independent review: dev CI identity in M2; A12 in M1; B11 checks must be required; v1 criteria made measurable and the date moved to after a full invoice month; merge-before-cutover details (Environments first, revert not reset); done-whens that move to the cutover; approval load; fuller costs for both decisions. §4 decisions approved by the author. |
 | 2026-11-18 | Signed off by the author. M1: A10, A13 and the contract additions done; only the `architecture.md` drift fix remains. |
 | 2026-11-18 | M1 done (tag `m1-done`). M2: B1–B6, B8, B9, D1, D4 done. |
+| 2026-11-18 | M3: ingest ADR done (ADR 0003). M2: C9 kill-switch code done (deploy is the author's). |

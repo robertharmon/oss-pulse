@@ -59,11 +59,15 @@ bugs are "two rows where the grain said one."
   it. CI fails if any other ID has no test (failure-mode coverage, backlog
   B11).
 - **Which days a build covers.** The daily build at 01:30 UTC builds
-  yesterday (UTC), **plus every day still in raw (§4.1) that has a
-  successful ingest attempt newer than that day's last successful build,
-  or that has never built successfully.** This catches late hours and
-  failed builds without re-reading days that didn't change (FM-17, FM-19).
-  "The build's window" below means exactly those days.
+  yesterday (UTC), **plus at most 4 catch-up days, oldest first.** A
+  catch-up day is a day still in raw or in the backfill table (§4.1) that
+  has a successful ingest attempt newer than its last successful build, or
+  has never built successfully, **and** whose 24 hours are all in an end
+  state (succeeded, or given up after 3 failed attempts; R-07). This
+  catches late hours and failed builds without re-reading days that didn't
+  change (FM-17, FM-19), keeps every build within the query quota, and
+  stops one stuck backfill hour from blocking the build. "The build's
+  window" below means exactly those days ([ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md) §3).
 - **Fixtures and expiration.** In CI and fixture runs, the dbt target
   turns partition expiration off, so fixtures can carry fixed past dates.
   The B11 retention check verifies the prod target's settings, not CI's.
@@ -200,7 +204,7 @@ fewer than 3 failed scheduled attempts since its last success.
 | FM-04 | **Truncated download** | Bytes received ≠ `Content-Length`, or a gzip end-of-stream / JSON parse error mid-file | Treated as FM-03: the file is re-downloaded, never partly loaded. Observed 2026-11-18 on our side: one download stopped at 1.76 of 4.57 MB, and the retry was complete. |
 | FM-05 | **Zero-byte file** | `Content-Length: 0` or an empty decoded body | Availability failure (GH Archive may republish). |
 | FM-06 | **Missing or null required field** | A record lacks `id`, `type`, `actor`, `repo` or `created_at`, or a `REQUIRED` raw column would be null | Content failure. The Great Expectations suite catches it before the load; the `REQUIRED` schema is the backstop. |
-| FM-07 | **New event type** | `event_type` not in §4.3 | Doesn't block anything. The `accepted_values` test on `stg_events.event_type` runs at severity `warn` with the tag `alert`, and the dbt service logs `ERROR` for any warned test tagged `alert`. So it alerts within a day without freezing the marts. Adding the value is then a routine contract change (§7.3). |
+| FM-07 | **New event type** | `event_type` not in §4.3 | Doesn't block anything. The `accepted_values` test on `stg_events.event_type` runs at severity `warn` with the tag `alert`, and the dbt job logs `ERROR` for any warned test tagged `alert`. So it alerts within a day without freezing the marts. Adding the value is then a routine contract change (§7.3). |
 | FM-08 | **New field inside `payload`** | Unknown key in the JSON | No action. `payload` is kept verbatim; new fields are invisible downstream until a model extracts them. A test asserts that unknown keys don't break staging. |
 | FM-09 | **Event outside its file's hour** | `created_at` truncated to the hour ≠ the file's hour | Content failure. The hour-scoped load would reject the row anyway. Not observed: 0 of 9,291 events across 3 hours of 2026-11-17. A consequence used by FM-10: copies of one event always share an hour. |
 | FM-10 | **Duplicate `event_id` within an hour** | Same `event_id` on two rows of one file | Raw keeps both (raw has no `unique` test). `stg_events` keeps one and counts the rest (R-02). Because of FM-09, duplicates can't span hours or days, so deduplicating within each built day is complete. Not observed in the same sample. |
@@ -225,7 +229,11 @@ backfill, debugging, and schema-drift detection.
 ### 4.1 `osp_raw_<env>.raw_gharchive_events`
 
 - **Grain:** one row per GH Archive event.
-- **Writer:** ingest Cloud Run service.
+- **Writer:** the ingest Cloud Run job ([ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md)).
+- **Backfill twin:** `raw_gharchive_events_backfill`, same schema and
+  partitioning, **no partition expiration**. Only `trigger=backfill`
+  writes to it; ingest creates it on first use, and the author drops it
+  once every backfilled day has built and balanced (ADR 0003 §3).
 - **Readers:** dbt (staging only); human developer for debugging.
 - **Partitioning:** hourly, on `event_hour` (DATE-TRUNC of
   `created_at` to hour-aligned timestamp, declared as a BigQuery
@@ -233,8 +241,8 @@ backfill, debugging, and schema-drift detection.
 - **Clustering:** `repo_id`.
 - **Retention:** 3 days (partition expiration). GCS keeps each hour's
   Parquet for 14 days, and reloading from it is a free load job. Loading
-  an hour older than 3 days into this table deletes it on arrival, so
-  backfills need their own path (cost model §5.3).
+  an hour older than 3 days into this table would delete it on arrival,
+  so ingest refuses (FM-13) and backfills use the backfill twin.
 - **Freshness target:** newest `event_hour` within 2h of now (allows
   for the scheduler offset + ingest runtime + alert fatigue margin).
   Checked by the daily build's source-freshness test, so a stalled ingest
@@ -270,10 +278,14 @@ backfill, debugging, and schema-drift detection.
 - **Grain:** one row per deduplicated event — `event_id` is unique.
 - **Writer:** dbt. Reads `raw_gharchive_events`.
 - **Readers:** dbt (fact/mart layer); never read by dashboards.
-- **Materialization:** incremental on `event_hour`, `insert_overwrite`
-  strategy (dbt's `merge` would scan the whole table every build).
-- **Retention:** 3 days (partition expiration), like raw. It carries the
-  full `payload`, so it's as large as raw.
+- **Materialization:** a **view** over `raw_gharchive_events` ∪
+  `raw_gharchive_events_backfill` (ADR 0003 §3). A stored table would
+  expire old backfilled days as they were written, and would duplicate
+  raw's payload bytes. Its dedupe partitions by `(event_hour, event_id)`,
+  equivalent because copies of an event share an hour (FM-09), so date
+  filters prune raw's partitions.
+- **Retention:** none of its own; it shows what raw and the backfill twin
+  hold.
 - **Freshness target:** 28h. Built once a day for the previous UTC day;
   just before the next build finishes, the newest `event_hour` is ~26.6h
   old.
@@ -387,13 +399,13 @@ across both tables).
 
 | ID | Failure | Signal | Handling |
 |---|---|---|---|
-| FM-13 | **Replay of an hour whose day is too old to rebuild** | The target day's first hour is more than 70 hours old (raw keeps 72; 2 hours' margin for the rebuild) | Ingest refuses with a clear error instead of loading into a day that can no longer be rebuilt whole. Use the backfill path ([`cost_model.md`](cost_model.md) §5.3). |
+| FM-13 | **Load that would expire on arrival, or a replay too old to rebuild** | Before loading, ingest reads the target table's partition expiration (`tables.get`, free). An hour that would already be expired, or, for `trigger=replay`, a day whose first hour is more than 70 hours old (raw keeps 72; 2 hours' margin for the rebuild) | Ingest refuses with a clear error instead of loading rows that would vanish or a day that can no longer be rebuilt whole. Use the backfill path ([ADR 0003](adr/0003-ingest-and-build-as-cloud-run-jobs.md) §3). |
 | FM-14 | **Rows don't reconcile at ingest** | `lines_read` ≠ `parquet_rows` (checked before the load), or `parquet_rows` ≠ `rows_loaded` (after) | The attempt is recorded `failed` and logs `ERROR`. A mismatch before the load stops it; rows from a mismatch after the load stay in raw, but staging ignores them (§4.2), and the next attempt's `WRITE_TRUNCATE` replaces them. |
 | FM-15 | **BigQuery quota exceeded** | `quotaExceeded` on a query | The build fails and logs `ERROR`. It isn't retried before the quota resets (midnight Pacific). Ingest is unaffected (loads aren't queries). The day is caught up by the next build (§1). |
 | FM-16 | **Language lookup fails or is rate-limited** | GitHub API 403/429/5xx | *Pending: spec in the M4 language ADR.* Intended handling: repos keep their last known language, or NULL (`(unknown)`), are retried next run, and the dbt build never fails because of it. |
 | FM-17 | **Hour loaded after its day was built** (a late hour 23, a replay) | A success in `raw_ingest_audit` newer than the day's last successful build | The next daily build rebuilds that day (§1). Nothing is lost while the day is still in raw (FM-13 guards the edge). |
 | FM-18 | **Ingest killed mid-attempt** (timeout, out of memory) | Cloud Run logs the crash; the attempt leaves no audit row | Cloud Run's crash log is an `ERROR`, which alerts. The hour has no success, so the next run retries it (§3.3 rule). Any rows it loaded are ignored by staging (no success row). |
-| FM-19 | **dbt build fails or times out** | Non-zero exit or request timeout | Logs `ERROR`, which alerts. Marts stay at their last good state. The day is caught up by the next build (§1); a fix goes through a PR (RUNBOOK §3.3). |
+| FM-19 | **dbt build fails or times out** | Non-zero exit or the job's task timeout | Logs `ERROR`, which alerts. Marts stay at their last good state. The day is caught up by the next build (§1); a fix goes through a PR (RUNBOOK §3.3). |
 | FM-20 | **Dashboard can't load a mart** | Query error, quota exceeded, or no partition for the expected date | The chart shows "data unavailable" (DECISIONS §6). For the snapshot marts, the dashboard asks for yesterday's partition and falls back once to the day before. RUNBOOK §3.6. |
 
 ## 5. Marts — the four contract-bearing tables## 5. Marts — the four contract-bearing tables
@@ -601,7 +613,7 @@ in CI on fixtures and in prod daily. It checks **the build's window**
 | R-04 | For every `as_of_date` built in this run: the sums of `stars_7d`, `prs_opened_7d` and `prs_merged_7d` over `mart_trending_repos` = the counts of `is_star`, `is_pr_opened` and `is_pr_merged` in `fct_events` over the same 7 days. (So every repo with any of those events in the window has a row.) |
 | R-05 | For every `as_of_date` built in this run: the sum of `total_prs_opened_90d` over `mart_contributor_concentration` = the count of `is_pr_opened` in `fct_events` over the same 90 days. |
 | R-06 | For each `event_type_bucket`: the sum of `event_count_30d` over `mart_time_of_day_activity` = the count of that bucket's events in `fct_events` over the same 30 days. And for each `(language, event_type_bucket)`, `pct_of_language_30d` sums to 100 (±0.01) over the 24 hours. |
-| R-07 | Every hour in the window, and every hour from the last 24, is in exactly one state: **succeeded** (has a success); **given up** (3 failed scheduled attempts since its last success, which alerted); or **pending** (fewer than 3 attempts, and younger than 3 hours). An hour in none of these is silently missing, and fails the test. |
+| R-07 | Every hour in the window, and every hour from the last 24, is in exactly one state: **succeeded** (has a success); **given up** (3 failed attempts, of any trigger, since its last success; the 3rd alerted); or **pending** (fewer than 3 attempts, and younger than 3 hours). An hour in none of these is silently missing, and fails the test. |
 
 ### 5.9 Metamorphic relations (change the input, predict the output)
 
@@ -700,17 +712,12 @@ the model changes.
 
 Known gaps this doc doesn't yet answer. Each is tracked for later.
 
-- **Scheduler offset.** The `5 * * * *` cron fires at the same minute
-  GH Archive publishes (see §3.2 note). Likely needs to move later
-  — `15 * * * *` is the obvious first try — but the right value needs
-  one real pipeline-latency measurement from Phase D before it's
-  locked. Tracked for the first ingest ADR.
+- **Scheduler offset.** Resolved 2026-11-18 by ADR 0003: ingest fires at
+  `15 * * * *`.
 - **README wording drift.** Resolved 2026-11-18: the README's four
   questions now match §5.
-- **Backfill window.** How far back do we backfill when first lighting
-  the pipeline? Likely answered by the first ingest ADR. Constraints from
-  [`cost_model.md`](cost_model.md) §5.3: raw's 3-day expiration means a
-  separate backfill path, and 90 days takes about a week of query quota.
+- **Backfill window.** Resolved 2026-11-18 by ADR 0003: 35 days at the
+  cutover, through the backfill twin, built at most 4 days a night.
 - **PII posture.** Resolved 2026-11-18 in
   [`security.md`](security.md) §2.2: handles are public but identifiable;
   the dashboard never shows an individual actor, and removal requests are
@@ -738,3 +745,4 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-11-18 | Failure modes get stable IDs: §3.3 rewritten as FM-01…FM-12 (adds truncated download, event outside its hour, duplicates, out-of-range timestamps, data-quality failure; transient retries move into ingest; late hours are retried automatically); §4.6 adds pipeline failure modes FM-13…FM-16. §4.5 adds `raw_ingest_audit`. §5.8 reconciliation counts R-01…R-07 and §5.9 metamorphic relations M-01…M-07. §5.5 `gini` range clarified. §1 stable-ID rule. |
 | 2026-11-18 | Review fixes to the same-day additions: retry/alert rule split into availability vs content failures, with precedence; raw loses its `unique` test (staging dedupes; FM-09 makes per-day dedupe complete); staging reads only each hour's latest successful attempt, and drops rows by suppression → range → duplicate in that order; the build's window (§1) includes catch-up days; CI turns expiration off; FM-17…FM-20 added (late hour after build, killed ingest, failed build, dashboard); FM-07 alerts without freezing marts; FM-13 cutoff is per day; FM-14 checks before and after the load; FM-16 pending; R-01, R-02, R-06 and R-07 corrected; M-01 checksum excludes load columns; M-02 constraints; gini formula pinned; windows inclusive. |
 | 2026-11-18 | §3.2: scheduler-margin note no longer cites architecture §4.2 (the minute is the ingest ADR's to pick). |
+| 2026-11-18 | Applied ADR 0003: build window capped at 4 eligible catch-up days (§1); `raw_gharchive_events_backfill` (§4.1); `stg_events` becomes a view (§4.2); FM-13 generalized to any load that would expire on arrival; FM-07/FM-19 say job; R-07's given-up counts any trigger; §8 scheduler offset and backfill window resolved. |

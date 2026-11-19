@@ -53,8 +53,8 @@ numeric ID, `1406578436` (owner ID `1310922`), not its name.
 | Bot Google account | `user:<bot-email>` | dev | The AI build agent's `gcloud` login. Its only grant is minting tokens for `osp-builder-dev`. |
 | Build agent SA | `serviceAccount:osp-builder-dev@oss-pulse-dev-<yyyy>.iam.gserviceaccount.com` | dev | What the agent actually acts as |
 | Dev CI SA | `serviceAccount:osp-ci-dev@oss-pulse-dev-<yyyy>.iam.gserviceaccount.com` | dev | GitHub Actions PR checks that need real BigQuery |
-| Ingest SA | `serviceAccount:osp-ingest-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run ingest service runtime |
-| dbt SA | `serviceAccount:osp-dbt-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run dbt service runtime |
+| Ingest SA | `serviceAccount:osp-ingest-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run ingest job runtime |
+| dbt SA | `serviceAccount:osp-dbt-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run dbt job runtime |
 | Scheduler SA | `serviceAccount:osp-scheduler-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Scheduler's identity when invoking ingest (hourly) and dbt (daily) |
 | Dashboard SA | `serviceAccount:osp-dashboard-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Streamlit Community Cloud app |
 | Build SA | `serviceAccount:osp-build-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Build when building the services from source |
@@ -130,7 +130,8 @@ Condition):
   - `dataset:<project>.<dataset>`;
   - `bucket:<name>`;
   - `secret:<project>/<name>`;
-  - `run-service:<project>/us-central1/<name>`;
+  - `run-service:<project>/us-central1/<name>` (the kill-switch function);
+  - `run-job:<project>/us-central1/<name>` (ingest and dbt, ADR 0003);
   - `sa:<email-local-part>` (a grant *on* that service account, letting the
     member act as it, in the project its row names).
 - **Condition** is `-` when there is none.
@@ -164,12 +165,12 @@ Condition):
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_staging_prod` | `roles/bigquery.dataEditor` | - | Build staging models. |
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataEditor` | - | Build facts, dimensions and marts. |
 | `serviceAccount:osp-dbt-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | dbt runs queries. |
-| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly ingest trigger. |
-| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | The daily dbt build trigger (`docs/cost_model.md` §8.1). Ingest no longer invokes dbt. |
+| `serviceAccount:osp-scheduler-prod@…` | `run-job:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly ingest trigger. Runs the job; can't pass overrides. |
+| `serviceAccount:osp-scheduler-prod@…` | `run-job:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | The daily dbt build trigger (`docs/cost_model.md` §8.1). Ingest no longer invokes dbt. |
 | `serviceAccount:osp-dashboard-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataViewer` | - | Read the marts. Can't see raw or staging. The dataset also holds `fct_events` and the dimensions; all public data, so a marts-only dataset isn't worth it (`docs/security.md` §3.1). |
 | `serviceAccount:osp-dashboard-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | A `SELECT` is a query job; read access alone can't run one. A per-user query quota caps this identity (§6). |
 | `serviceAccount:osp-build-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.builder` | - | Cloud Build runs as this identity to build images from source. Replaces the Compute Engine default service account, which gets broad `editor` by default. |
-| `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.sourceDeveloper` | - | `gcloud run deploy --source` (DECISIONS §10). |
+| `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.sourceDeveloper` | - | `gcloud run jobs deploy --source` (DECISIONS §10); the role covers jobs. |
 | `serviceAccount:osp-deploy-prod@…` | `project:oss-pulse-<yyyy>` | `roles/serviceusage.serviceUsageConsumer` | - | Required alongside `run.sourceDeveloper` for source deploys. |
 | `serviceAccount:osp-deploy-prod@…` | `sa:osp-ingest-prod` | `roles/iam.serviceAccountUser` | - | Deploy a service that runs *as* the ingest identity. |
 | `serviceAccount:osp-deploy-prod@…` | `sa:osp-dbt-prod` | `roles/iam.serviceAccountUser` | - | Same, for dbt. |
@@ -242,8 +243,8 @@ disagree, §4 wins.
 | BigQuery `osp_staging_prod` | `osp-dbt-prod` | author; `osp-tf-plan-prod` (via `viewer`) |
 | BigQuery `osp_analytics_prod` | `osp-dbt-prod` | `osp-dashboard-prod`; author; `osp-tf-plan-prod` (via `viewer`) |
 | Secret `osp_slack_webhook_url` | author | author |
-| Cloud Run `osp-ingest-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
-| Cloud Run `osp-dbt-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
+| Cloud Run job `osp-ingest-prod` | `osp-deploy-prod` (deploys) | run by `osp-scheduler-prod`; replays and backfills by the author |
+| Cloud Run job `osp-dbt-prod` | `osp-deploy-prod` (deploys) | run by `osp-scheduler-prod` |
 
 ## 6. Credentials and controls outside IAM
 
@@ -282,6 +283,7 @@ disagree, §4 wins.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | ADR 0003: ingest and dbt are Cloud Run jobs; `run-job:` scope type added; Scheduler's grants move to the jobs. |
 | 2026-11-18 | §4.2/§5: dashboard read scope stated honestly (whole analytics dataset). §6: Slack webhook becomes an environment secret on protected branches. |
 | 2026-11-18 | §6: bot token corrected to a classic token (matches author_setup §1.3); dashboard key row points to `security.md` §3.1. |
 | 2026-11-18 | Scheduler SA now invokes the dbt service directly (daily build); ingest loses its invoker grant on dbt. Per `docs/cost_model.md` §8.1. |

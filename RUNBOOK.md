@@ -70,18 +70,19 @@ Example for 05:00 UTC on 2026-11-10. GH Archive's URL uses the
 1. Confirm the hour exists upstream:
    `curl -sI https://data.gharchive.org/2026-11-10-5.json.gz`.
    A 200 means it's available.
-2. Re-trigger the ingest service with body `{"hour": "2026-11-10-05"}`.
-   _(Exact command lands with the ingest service.)_
+2. Run the ingest job for that hour, as the author:
+   `gcloud run jobs execute osp-ingest-prod --region=us-central1 --args=--hour=2026-11-10-05,--trigger=replay`.
+   _(Argument names are fixed when the ingest job lands, roadmap M3.)_
 3. Check that `raw_ingest_audit` shows a new successful run for the hour.
 4. The next daily build rebuilds that day automatically (data contract
    §1, FM-17). To see it sooner, run
    `dbt build --vars '{run_date: "2026-11-10"}'` and check it finished
-   green. _(Exact invocation lands with the dbt service.)_
+   green. _(Exact invocation lands with the dbt job.)_
 
 **Days whose first hour is more than 70 hours old** can't be replayed this
 way, and ingest refuses (FM-13): raw and `stg_events` expire partitions
 after 3 days, so the day could no longer be rebuilt whole. Use the
-backfill path from the ingest ADR instead (`docs/cost_model.md` §5.3).
+backfill path instead (ADR 0003 §3; the cutover runbook has the steps).
 
 ### 3.2 Missing hour (GH Archive 404)
 
