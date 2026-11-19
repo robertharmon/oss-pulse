@@ -14,14 +14,16 @@ requires-python = ">=3.11,<3.12"
 package = false
 
 [tool.uv.workspace]
-members = ["ingest"]
+members = ["ingest", "killswitch"]
 
 [tool.uv.sources]
 osp-ingest = { workspace = true }
+osp-killswitch = { workspace = true }
 
 [dependency-groups]
 dev = [
     "osp-ingest",
+    "osp-killswitch",
     "ruff>=0.8",
     "mypy>=1.13",
     "pytest>=8.3",
@@ -48,7 +50,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["osp_ingest", "scripts"]
+known-first-party = ["osp_ingest", "osp_killswitch", "scripts"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]  # assert is how pytest tests work
@@ -56,7 +58,12 @@ known-first-party = ["osp_ingest", "scripts"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["ingest/src", "scripts", "tests"]
+files = ["ingest/src", "killswitch", "scripts", "tests"]
+
+[[tool.mypy.overrides]]
+# functions-framework ships no type information.
+module = ["functions_framework"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -69,4 +76,4 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["ingest/src", "scripts"]
+source = ["ingest/src", "killswitch/osp_killswitch", "scripts"]

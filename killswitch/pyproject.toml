@@ -1,0 +1,16 @@
+[project]
+name = "osp-killswitch"
+version = "0.0.0"
+description = "oss-pulse billing kill switch: unlink billing when a budget notification shows spend over the cap"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "functions-framework>=3.8",
+    "google-cloud-billing>=1.14",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["osp_killswitch"]
