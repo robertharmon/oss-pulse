@@ -94,7 +94,7 @@ Rare. Ingest retries automatically on the next scheduled runs.
   (§3.1).
 - If GH Archive still hasn't published it a day later, accept the hour
   as lost (data contract §3.4: "a lost hour is lost"). Lost hours are rare
-  now, so **log each one** in Part 2 (per `docs/architecture.md` §6), even
+  now, so **log each one** in Part 2 (`docs/architecture.md` §6), even
   if it's a one-line SEV3 entry.
 
 ### 3.3 dbt test failure

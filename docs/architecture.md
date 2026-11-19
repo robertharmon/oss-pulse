@@ -18,20 +18,21 @@
 
 Once an hour, a Cloud Scheduler job calls the **ingest** Cloud Run
 service. Ingest downloads the previous hour's GH Archive file (one
-gzipped file of line-delimited JSON, about 2–5 MB, holding every public
+gzipped file of line-delimited JSON, about 2–14 MB, holding every public
 GitHub event for that hour), validates the batch with Great Expectations,
 writes it to GCS as a Zstandard-compressed Parquet file, loads it into a
 raw BigQuery table with a free load job, and records the attempt in an
-audit table. Once a day, at 01:30 UTC, a second Scheduler job calls the
-**dbt** Cloud Run service. It runs `dbt build` for yesterday, plus any
-earlier day that changed or failed since its last build. That transforms
+audit table. Once a day, at 01:30 UTC, a second Scheduler job starts
+**dbt** on Cloud Run (a service or a job; the ingest ADR decides which).
+It runs `dbt build` for yesterday, plus any earlier day still in raw that
+changed or failed since its last build. That transforms
 raw events through staging and core tables into four mart tables:
 trending repos, language share, contributor concentration, and
 time-of-day activity. A Streamlit app on Streamlit Community Cloud reads
 the marts and renders one chart each, caching results for an hour. Any
-`ERROR` log from either service fires a Slack alert. Everything except
-the GCP projects, billing, the Terraform state bucket, secret values, the
-Slack channel and the Streamlit app is defined in Terraform.
+`ERROR` log from either one fires a Slack alert. Prod resources are
+defined in Terraform; the exceptions, which the author sets up by hand,
+are listed in §2 under "Infra".
 
 ## 2. The diagram
 
@@ -39,7 +40,7 @@ Slack channel and the Streamlit app is defined in Terraform.
                       ┌─────────────────────────────┐
                       │  https://data.gharchive.org │
                       │  public, no auth; one       │
-                      │  .json.gz per hour, ~2–5 MB │
+                      │  .json.gz per hour, 2–14 MB │
                       │  live at :05 past the hour  │
                       └──────────────┬──────────────┘
                                      │ HTTPS GET (unpadded hour in URL)
@@ -66,7 +67,7 @@ Slack channel and the Streamlit app is defined in Terraform.
           │                                                  │ reads
           ▼                                                  │ (BigQuery only)
  ┌──────────────────────────────────┐                        │
- │ Cloud Run: dbt                   │◀───────────────────────┘
+ │ dbt on Cloud Run (service or job)│◀───────────────────────┘
  │  `dbt build` for the build's     │
  │  window: yesterday + catch-up    │
  │  days (data contract §1)         │
@@ -104,13 +105,16 @@ Slack channel and the Streamlit app is defined in Terraform.
              GitHub's API (weekly refresh). Its design and schedule are
              decided in the M4 language ADR.
 
- Infra:      Terraform defines buckets, datasets, service accounts and
-             grants, empty secret shells, both Cloud Run services, both
-             Scheduler jobs, the alert policy, and the Artifact Registry
-             repo with its cleanup policy. Outside Terraform: the GCP
-             projects, billing and the kill switch's budget, the Terraform
-             state bucket, secret values, the Slack channel, and the
-             Streamlit app.
+ Infra:      Terraform defines prod's buckets, datasets, service accounts
+             and grants, empty secret shells, ingest and dbt on Cloud Run,
+             both Scheduler jobs, the alert policy, and the Artifact
+             Registry repo with its cleanup policy. Set up by hand by the
+             author instead (docs/author_setup.md): the GCP projects and
+             billing; budgets, the kill-switch function, its Pub/Sub topic
+             and its billing grants; the BigQuery query quotas; the
+             Terraform state bucket; secret values; the Slack channel; the
+             Streamlit app; and everything in dev (its bucket, datasets,
+             builder and CI identities).
 
  Deploy:     no Dockerfile (DECISIONS §10). `gcloud run deploy --source`
              has Cloud Build build each image with buildpacks and store it
@@ -181,7 +185,7 @@ The hourly Scheduler job calls ingest for hour `2026-10-05-14`. Ingest:
    `created_at=2026-10-05 14:23:17`, `event_hour=2026-10-05 14:00`, and
    the attempt's `ingest_run_id`.
 4. **Loads** the file into `osp_raw_prod.raw_gharchive_events`, partition
-   `2026101514`, with `WRITE_TRUNCATE`, so a replay replaces the hour
+   `2026100514`, with `WRITE_TRUNCATE`, so a replay replaces the hour
    instead of duplicating it. The load is free.
 5. **Records** the attempt in `raw_ingest_audit`: lines read = Parquet
    rows = rows loaded, outcome `success`.
@@ -206,12 +210,17 @@ catch-up days):
      change (a star isn't a PR).
 5. **Tests** run: uniqueness and relationships, the balancing counts
    (R-01…R-07), and freshness. Any failure exits non-zero, logs `ERROR`,
-   and alerts. The marts keep their last good state.
+   and alerts; the marts keep their last good state. The one exception is
+   a new event type (FM-07), which alerts without failing the build.
 
 ### 4.4 Serve (on the next page view)
 
-The dashboard queries each mart's 2026-10-05 partition by literal date,
-once per hour at most, and renders:
+The dashboard queries each mart once per hour at most. For the two
+snapshot marts it asks for the newest partition by literal date
+(2026-10-05 here); between midnight and the end of the daily build that
+partition doesn't exist yet, so it falls back once to the day before
+(FM-20). The other two marts have no date partition and are read whole.
+It renders:
 - **Trending repos this week:** hello-world's bar is 1 taller.
 - **Time-of-day activity:** its cell is a little brighter.
 
@@ -235,7 +244,10 @@ accepted price of a once-a-day build (cost model §4.2).
 
 If ingest fails for an hour, the hour is retried on the next runs and
 alerts per contract §3.3. A replay is a manual call to ingest for that hour
-(RUNBOOK §3.1), and the next daily build catches its day up (FM-17).
+(RUNBOOK §3.1), and the next daily build catches its day up (FM-17). A
+replay only works while the whole day is still in raw: ingest refuses a
+day whose first hour is more than 70 hours old (FM-13); older days go
+through the backfill path.
 
 ## 6. Failure boundaries
 
@@ -244,16 +256,20 @@ The full list, with IDs that tests reference, is
 
 | Failure | Stops at | How it's noticed | Recovery |
 |---|---|---|---|
-| Hour missing, late, truncated, or a 5xx (FM-01…05) | Ingest | 3rd failed scheduled attempt logs `ERROR` → Slack | Retried automatically; then a replay once GH Archive publishes (RUNBOOK §3.1–§3.2) |
+| Hour missing, late, truncated, or a 5xx (FM-01…05) | Ingest | 3rd failed scheduled attempt logs `ERROR` → Slack | Retried automatically; then a replay once GH Archive publishes (RUNBOOK §3.1–§3.2). An hour still unpublished a day later is lost, and each lost hour gets a RUNBOOK Part 2 entry. |
+| Ingest stops running (Scheduler job paused or deleted) | Nowhere: nothing runs, so nothing logs `ERROR` | **Up to ~24h late:** the daily build's raw freshness test fails | Re-enable the job, then replay the gap. A metric-absence alert would close this gap (roadmap §6) |
 | Bad content in a file (FM-06, 09, 12) | Ingest, before the load | `ERROR` on the first attempt → Slack | A PR fixing the data handling or the expectation, then a replay |
 | Ingest killed mid-run (FM-18) | Ingest | Cloud Run's crash log → Slack | The hour has no success, so the next run retries it |
 | dbt build or test failure (FM-19) | dbt | Non-zero exit → `ERROR` → Slack | Fix via PR (RUNBOOK §3.3); the next build catches the day up |
+| New event type (FM-07) | Nowhere (doesn't block) | A warned test tagged `alert` → `ERROR` → Slack | Add the type to the contract's accepted list |
 | Query quota exceeded (FM-15) | dbt or dashboard | `ERROR` → Slack; dashboard shows "data unavailable" | Wait for the reset; find what used the quota |
 | Dashboard can't load a mart (FM-20) | Dashboard | "Data unavailable" to the viewer | RUNBOOK §3.6 |
 | Spend over budget | Whole project | Kill switch unlinks billing; budget email | RUNBOOK §3.5 |
 
-**Nothing retries silently.** Ingest retries its own downloads and recent
-hours on a fixed rule, and records every attempt; nothing else retries.
+**Nothing retries without a record.** Ingest retries downloads and
+recent hours on a fixed rule and records every attempt in
+`raw_ingest_audit`; the daily build catches up days that changed or
+failed, found from that same table.
 
 ## 7. Security boundaries
 
@@ -265,9 +281,10 @@ policies are in the [security doc](security.md).
   - ingest writes the bucket and the raw dataset;
   - dbt reads raw and writes staging and analytics, through BigQuery
     only, never GCS;
-  - the Scheduler identity can only invoke the two services;
-  - the dashboard identity reads `osp_analytics_<env>` and runs queries,
-    capped by a per-user daily quota.
+  - the Scheduler identity can only invoke ingest and dbt;
+  - the dashboard identity reads `osp_analytics_<env>` and runs queries.
+- **A per-user daily query quota** applies to every identity alike
+  (dbt's included), set so a leaked dashboard key can't use up the day.
 - **No key files, with one exception.** Cloud Run uses attached
   identities; GitHub Actions uses Workload Identity Federation pinned to
   the repo's numeric ID. The exception is the dashboard's read-only key,
