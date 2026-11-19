@@ -123,15 +123,15 @@ once the pipeline runs in Phase D.
 
 | Property | Value | Source | Designed-for |
 |---|---|---|---|
-| Hourly file publication delay | ~5 min after the hour closes (file's `Last-Modified` at `:05:03–:05:04` past the next hour, 6/6 published hours sampled) | measured | **Current `5 * * * *` cron gives ~0 min margin — see note below** |
+| Hourly file publication delay | ~5 min after the hour closes (file's `Last-Modified` at `:05:03–:05:04` past the next hour, 6/6 published hours sampled) | measured | **A `5 * * * *` cron would give ~0 min margin — see note below** |
 | File size (gzipped) | ~6.5–14.2 MB per hour (7 published hours sampled; mid-day UTC runs ~6.5–7.7 MB, off-peak samples ran larger) | measured | Trivially fits in Cloud Run memory; still stream for forward-compatibility if volumes grow |
 | File size (decompressed) | ~30–36 MB per hour (5 hours decompressed; the 14 MB gzipped sample was HEAD-only) | measured | Same |
 | Row count per hour | ~5,000–7,700 events per hour (5 hours line-counted, range 5,171–7,736) | measured | Load path easily handles 10× this; no batching needed |
 | Availability | **72 of 72 hours present** (every hour of 2026-10-06, 2026-10-07 and 2026-11-09, probed with unpadded URLs on 2026-11-11). The earlier "~55% present" figure was a measurement error (see §3.2.1). | measured | A missing hour is rare: treat it as an alerting failure, not routine; see §3.3 |
 | Schema stability | GitHub's event schema has been stable for years but is **not versioned** | public knowledge | See §3.3 for how we detect drift |
 
-**Scheduler-margin note.** The architecture ([`architecture.md`](architecture.md)
-§4.2) specifies a `5 * * * *` cron (fires at :05 past the hour). With
+**Scheduler-margin note.** The original design used a `5 * * * *` cron
+(fires at :05 past the hour); the ingest ADR now picks the minute. With
 GH Archive's measured publication delay of ~5 min, the scheduler fires
 roughly when the file goes live — leaving effectively no margin for
 GH Archive clock drift or slow publication. This is tracked as an
@@ -737,3 +737,4 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-11-18 | §5.3, §5.5: `repo_name` added to the two repo-level marts (additive), so the dashboard needn't read `dim_repos`. §4.2: `actor_suppressions` filter for removal requests. |
 | 2026-11-18 | Failure modes get stable IDs: §3.3 rewritten as FM-01…FM-12 (adds truncated download, event outside its hour, duplicates, out-of-range timestamps, data-quality failure; transient retries move into ingest; late hours are retried automatically); §4.6 adds pipeline failure modes FM-13…FM-16. §4.5 adds `raw_ingest_audit`. §5.8 reconciliation counts R-01…R-07 and §5.9 metamorphic relations M-01…M-07. §5.5 `gini` range clarified. §1 stable-ID rule. |
 | 2026-11-18 | Review fixes to the same-day additions: retry/alert rule split into availability vs content failures, with precedence; raw loses its `unique` test (staging dedupes; FM-09 makes per-day dedupe complete); staging reads only each hour's latest successful attempt, and drops rows by suppression → range → duplicate in that order; the build's window (§1) includes catch-up days; CI turns expiration off; FM-17…FM-20 added (late hour after build, killed ingest, failed build, dashboard); FM-07 alerts without freezing marts; FM-13 cutoff is per day; FM-14 checks before and after the load; FM-16 pending; R-01, R-02, R-06 and R-07 corrected; M-01 checksum excludes load columns; M-02 constraints; gini formula pinned; windows inclusive. |
+| 2026-11-18 | §3.2: scheduler-margin note no longer cites architecture §4.2 (the minute is the ingest ADR's to pick). |
