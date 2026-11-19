@@ -518,14 +518,8 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
   — `15 * * * *` is the obvious first try — but the right value needs
   one real pipeline-latency measurement from Phase D before it's
   locked. Tracked for the first ingest ADR.
-- **README wording drift.** The four questions in `../README.md` were
-  written assuming `PushEvent` was in the feed. With `PushEvent`
-  absent (§4.3), three of them now have mart contracts that differ
-  from the README phrasing: Q1 drops "pushes", Q3 counts PR-openers
-  rather than commit authors, Q4 drops "commit" from the bucket set.
-  The README is not part of this PR; a follow-up docs PR should
-  reconcile the two before any mart is actually built. Logged as a
-  separate line in `../OPEN_LOOPS.md`.
+- **README wording drift.** Resolved 2026-11-18: the README's four
+  questions now match §5.
 - **Backfill window.** How far back do we backfill when first lighting
   the pipeline? Likely answered by the first ingest ADR; parked.
 - **PII posture.** `actor_login` is a GitHub handle — public, but
@@ -545,3 +539,4 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-10-07 | Follow-up measurement run (32,602 rows across 5 hours + 11 off-peak HEADs) drove: §3.2 availability downgraded to ~55% measured, file-size and row-count ranges widened; §3.3 missing-hour upgraded from edge case to hot path (non-alerting by default); §4.1 added `org_id`, `org_login`, `is_public`; §4.3 added `DiscussionEvent` to the whitelist and noted PushEvent/CreateEvent/DeleteEvent/SponsorshipEvent as absent-but-whitelisted; §5.1 removed `is_push`/`push_commit_count`, re-derived PR flags from `payload.action` (the measured discriminator); §5.3 replaced `pushes_*` columns with `prs_opened_*` + `prs_merged_*`; §5.5 redefined the mart around PR-opening actors (PushEvent-based commit metric unbuildable); §5.6 replaced `push` bucket with `issue_opened` + `star`; §8 added README-wording-drift item. |
 | 2026-11-11 | §3.1 URL pattern corrected to an unpadded hour (`-5`, not `-05`); §2 notes the project's own hour stays padded. §3.2 availability corrected from ~55% to 72/72 present: the earlier 404s came from padded URLs (§3.2.1 correction + re-check). §3.3 missing hour downgraded from routine to rare, now alerting after 3 failed attempts instead of a trailing-24h miss-rate threshold. |
 | 2026-11-11 | §5.4 `distinct_contributors` / `total_contributors_this_month` redefined on PR-opened or PR-merged events (the old definition still referenced the absent `PushEvent`); noted shares can sum past 100%. §5.1 `is_pr_merged` re-verified against 3 fresh hours (`merged` action confirmed present) and noted that a merge event's actor is the merger, not the author. |
+| 2026-11-18 | §8 README wording drift marked resolved (README reworded to match §5). |
