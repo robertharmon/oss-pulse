@@ -5,115 +5,121 @@
 > GitHub event from GH Archive to a chart on the Streamlit dashboard
 > without opening any other file.
 >
-> This doc describes the **target** architecture. The repo is currently
-> in the foundation phase ([`FOUNDATION_BACKLOG.md`](../FOUNDATION_BACKLOG.md));
-> no components below exist yet. The point of writing this now is so
-> every subsequent PR has something concrete to be consistent with.
+> This doc describes the **target** architecture. None of it is built yet
+> ([`roadmap.md`](roadmap.md)). Where a detail is still open, it says
+> which document will decide it. When this doc and a more specific one
+> disagree, the specific one wins: the [data contract](data_contract.md)
+> for tables and failure modes, the [access matrix](access_matrix.md) for
+> permissions, the [cost model](cost_model.md) for cadence and retention.
 
 ---
 
 ## 1. The system in one paragraph
 
-Once an hour, Cloud Scheduler pings a Cloud Run service. The service
-downloads the previous hour's GH Archive file (one gzipped line-delimited
-JSON file, ~0.5–1 GB, holding every public GitHub event for that hour),
-converts it to Parquet, and writes it to a GCS bucket. A second Cloud
-Run invocation then loads that Parquet file into a raw BigQuery table.
-A third Cloud Run invocation runs `dbt build`, which transforms the raw
-table through staging and intermediate models into analytical marts
-(trending repos, language share, contributor concentration, time-of-day
-patterns). A Streamlit app hosted on Streamlit Community Cloud queries
-the mart tables directly and renders four charts. If any step fails or
-if a dbt test fails, Cloud Logging triggers a Slack webhook. Everything
-except the GCP project and billing is defined in Terraform; everything
-secret lives in Secret Manager.
+Once an hour, a Cloud Scheduler job calls the **ingest** Cloud Run
+service. Ingest downloads the previous hour's GH Archive file (one
+gzipped file of line-delimited JSON, about 2–5 MB, holding every public
+GitHub event for that hour), validates the batch with Great Expectations,
+writes it to GCS as a Zstandard-compressed Parquet file, loads it into a
+raw BigQuery table with a free load job, and records the attempt in an
+audit table. Once a day, at 01:30 UTC, a second Scheduler job calls the
+**dbt** Cloud Run service. It runs `dbt build` for yesterday, plus any
+earlier day that changed or failed since its last build. That transforms
+raw events through staging and core tables into four mart tables:
+trending repos, language share, contributor concentration, and
+time-of-day activity. A Streamlit app on Streamlit Community Cloud reads
+the marts and renders one chart each, caching results for an hour. Any
+`ERROR` log from either service fires a Slack alert. Everything except
+the GCP projects, billing, the Terraform state bucket, secret values, the
+Slack channel and the Streamlit app is defined in Terraform.
 
 ## 2. The diagram
 
 ```
-                      ┌───────────────────────────┐
-                      │  https://gharchive.org/   │
-                      │  (public, no auth, hourly │
-                      │   .json.gz drops, ~0.5GB) │
-                      └─────────────┬─────────────┘
-                                    │ HTTPS GET
-                                    │ (one URL per hour)
-                                    ▼
-   ┌──────────────────┐   invokes   ┌───────────────────────────────┐
-   │ Cloud Scheduler  │────────────▶│ Cloud Run: ingest             │
-   │ cron "5 * * * *" │             │ (Python 3.11 in Docker)       │
-   │ (one job)        │             │  1. fetch gharchive .json.gz  │
-   └──────────────────┘             │  2. stream-decode JSON lines  │
-                                    │  3. write Parquet to GCS      │
-                                    │  4. call BQ load job          │
-                                    │  5. invoke dbt-run service    │
-                                    └──────────────┬────────────────┘
-                                                   │
-                      ┌────────────────────────────┼──────────────────────┐
-                      │ writes                     │ load                 │ invokes
-                      ▼                            ▼                      ▼
-         ┌──────────────────────┐    ┌──────────────────────┐   ┌──────────────────────┐
-         │ GCS                  │    │ BigQuery             │   │ Cloud Run: dbt       │
-         │ osp-raw-events-<env> │───▶│ osp_raw_<env>        │   │ (Python 3.11 image   │
-         │  gharchive/          │    │  .raw_gharchive_     │   │   with dbt-bigquery) │
-         │   year=YYYY/         │    │   events             │   │  runs `dbt build`    │
-         │   month=MM/          │    │ (hourly partitioned, │   │  against the dataset │
-         │   day=DD/            │    │  clustered on        │   │  below               │
-         │   hour=HH.parquet    │    │  repo_id)            │   └──────────┬───────────┘
-         └──────────────────────┘    └──────────────────────┘              │ builds
-                                                                           ▼
-                                                        ┌────────────────────────────────┐
-                                                        │ BigQuery                       │
-                                                        │ osp_staging_<env>              │
-                                                        │   stg_events, stg_repos,       │
-                                                        │   stg_actors                   │
-                                                        │     │                          │
-                                                        │     ▼                          │
-                                                        │ osp_analytics_<env>            │
-                                                        │   fct_events, dim_repos,       │
-                                                        │   dim_actors,                  │
-                                                        │   mart_trending_repos,         │
-                                                        │   mart_language_share,         │
-                                                        │   mart_contributor_concentr.,  │
-                                                        │   mart_time_of_day_activity    │
-                                                        └──────────────┬─────────────────┘
-                                                                       │ SELECT (read-only
-                                                                       │  BigQuery API,
-                                                                       │  service-account
-                                                                       │  key via Streamlit
-                                                                       │  secrets)
-                                                                       ▼
-                                                        ┌────────────────────────────────┐
-                                                        │ Streamlit Community Cloud      │
-                                                        │ dashboard/app.py               │
-                                                        │   4 charts, 1 per mart table   │
-                                                        └────────────────────────────────┘
+                      ┌─────────────────────────────┐
+                      │  https://data.gharchive.org │
+                      │  public, no auth; one       │
+                      │  .json.gz per hour, ~2–5 MB │
+                      │  live at :05 past the hour  │
+                      └──────────────┬──────────────┘
+                                     │ HTTPS GET (unpadded hour in URL)
+                                     ▼
+ ┌──────────────────┐ hourly  ┌──────────────────────────────────┐
+ │ Cloud Scheduler  │────────▶│ Cloud Run: ingest                │
+ │ job 1: ingest    │         │  1. fetch hour (+ retry missing  │
+ │ (minute set by   │         │     hours from the last 24)      │
+ │  the ingest ADR) │         │  2. validate (Great Expectations)│
+ │                  │         │  3. write Parquet (Zstandard)    │
+ │ job 2: dbt       │         │  4. load job → raw (hour, trunc.)│
+ │ 01:30 UTC daily  │         │  5. append audit row (load job)  │
+ └────────┬─────────┘         └──────┬──────────────┬────────────┘
+          │ daily                    │ writes       │ loads
+          │                          ▼              ▼
+          │          ┌───────────────────────┐ ┌───────────────────────────┐
+          │          │ GCS                   │ │ BigQuery osp_raw_<env>    │
+          │          │ osp-raw-events-<env>  │ │  raw_gharchive_events     │
+          │          │  gharchive/year=/     │ │   hourly partitions,      │
+          │          │  month=/day=/hour=    │ │   clustered on repo_id,   │
+          │          │ 14 days, soft delete  │ │   kept 3 days             │
+          │          │ off (recovery copy)   │ │  raw_ingest_audit (kept)  │
+          │          └───────────────────────┘ └─────────────┬─────────────┘
+          │                                                  │ reads
+          ▼                                                  │ (BigQuery only)
+ ┌──────────────────────────────────┐                        │
+ │ Cloud Run: dbt                   │◀───────────────────────┘
+ │  `dbt build` for the build's     │
+ │  window: yesterday + catch-up    │
+ │  days (data contract §1)         │
+ └──────────────┬───────────────────┘
+                │ builds
+                ▼
+ ┌────────────────────────────────────────────────────────────┐
+ │ BigQuery osp_staging_<env>                                 │
+ │   stg_events (3 days; latest successful attempt per hour,  │
+ │   suppressions, dedupe), stg_repos, stg_actors             │
+ │                         │                                  │
+ │                         ▼                                  │
+ │ BigQuery osp_analytics_<env>                               │
+ │   fct_events (400 days), dim_repos, dim_actors (kept)      │
+ │   mart_trending_repos, mart_contributor_concentration      │
+ │     (daily snapshots on as_of_date, 30 days)               │
+ │   mart_language_share, mart_time_of_day_activity           │
+ └────────────────────────────┬───────────────────────────────┘
+                              │ SELECT, once per chart per hour
+                              │ (read-only key in Streamlit secrets)
+                              ▼
+ ┌────────────────────────────────────────────────────────────┐
+ │ Streamlit Community Cloud: dashboard/app.py                │
+ │   4 charts, 1 per mart; st.cache_data(ttl=3600)            │
+ └────────────────────────────────────────────────────────────┘
 
-   ──────────────────────────── cross-cutting ────────────────────────────
+ ─────────────────────────────── cross-cutting ───────────────────────────────
 
-   Observability:  every Cloud Run invocation → Cloud Logging → log-based
-                   alert policy on ERROR → Slack webhook (osp_slack_
-                   webhook_url in Secret Manager).  dbt test failures
-                   non-zero-exit the dbt Cloud Run job → same alert path.
+ Alerting:   any ERROR log from ingest or dbt → Cloud Logging log-based
+             alert policy → Slack notification channel (created by hand,
+             outside Terraform). CI failures on main/build/agentic → Slack
+             through the `ci-alerts` GitHub environment's secret.
 
-   Infra-as-code:  everything inside the diagram above (buckets, datasets,
-                   service accounts, scheduler jobs, Cloud Run services,
-                   log sinks, alert policies, secrets as empty shells) is
-                   defined in terraform/*.tf.  The ONLY things outside
-                   Terraform are the GCP project itself, billing linkage,
-                   the Terraform remote-state bucket, and the real secret
-                   *values* loaded into Secret Manager.
+ Language:   a small lookup job fills dim_repos.primary_language from
+             GitHub's API (weekly refresh). Its design and schedule are
+             decided in the M4 language ADR.
 
-   Secrets:        Secret Manager holds the Slack webhook URL and the
-                   Streamlit dashboard's BigQuery service-account JSON.
-                   Cloud Run reads secrets at invocation; GitHub Actions
-                   authenticates to GCP via Workload Identity Federation
-                   (no long-lived keys in the repo or in GH secrets).
+ Infra:      Terraform defines buckets, datasets, service accounts and
+             grants, empty secret shells, both Cloud Run services, both
+             Scheduler jobs, the alert policy, and the Artifact Registry
+             repo with its cleanup policy. Outside Terraform: the GCP
+             projects, billing and the kill switch's budget, the Terraform
+             state bucket, secret values, the Slack channel, and the
+             Streamlit app.
 
-   CI/CD:          GitHub Actions runs lint/typecheck/test/terraform-plan
-                   on every PR; `terraform apply` runs on merge to main.
-                   dbt and ingest images are built and pushed to Artifact
-                   Registry on merge; Cloud Run always pulls `:main`.
+ Deploy:     no Dockerfile (DECISIONS §10). `gcloud run deploy --source`
+             has Cloud Build build each image with buildpacks and store it
+             in Artifact Registry (keep the 2 newest). Deploys run from
+             `main` only, through the author-approved `prod-deploy`
+             GitHub environment.
+
+ Spend:      both projects have a billing kill switch, a 10 GiB/day query
+             quota and budget alerts (DECISIONS §1, cost model §7).
 ```
 
 ## 3. Component responsibilities
@@ -123,37 +129,31 @@ that's a signal to re-read this section before writing it.
 
 | Component | Owns | Does NOT own |
 |---|---|---|
-| **GH Archive** (external) | Being the source of truth for public GH events. Hourly `.json.gz` files at a predictable URL. | Reliability guarantees. Occasional missing hours are expected and handled downstream. |
-| **Cloud Scheduler** | Firing the ingest job once per hour on a fixed cron. One job per environment. | Retries (Cloud Run handles retry); any logic beyond "invoke the URL". |
-| **Cloud Run: ingest** | Fetching one hour's `.json.gz`, converting to Parquet, writing to GCS, triggering the BQ load, then triggering the dbt build. Fails fast on any non-2xx, malformed JSON, or zero rows. | Transformation logic (that's dbt). Scheduling (that's Cloud Scheduler). |
-| **GCS: `osp-raw-events-<env>`** | Durable archive of the raw Parquet files. Partitioned by `year=/month=/day=/hour=`. Lifecycle: keep forever at the free-tier size we'll hit. | Serving queries directly — all analytics go through BigQuery. |
-| **BigQuery: `osp_raw_<env>`** | The raw landing table (`raw_gharchive_events`). Hourly-partitioned, clustered on `repo_id`. Columns mirror the gharchive JSON schema one-to-one; no transformation. | Any business logic. Any aggregation. |
-| **Cloud Run: dbt** | Running `dbt build` against the raw dataset: staging → intermediate → marts, plus tests. One container image, same `dbt-bigquery` project. | Scheduling; invoked by the ingest service once the load completes. |
-| **BigQuery: `osp_staging_<env>`** | Views/tables that rename, cast, and lightly clean raw columns. One `stg_<entity>` per raw entity (`stg_events`, `stg_repos`, `stg_actors`). | Business metrics. Joins beyond deduplication. |
-| **BigQuery: `osp_analytics_<env>`** | Facts (`fct_events`), dimensions (`dim_repos`, `dim_actors`), and the four `mart_*` tables that answer the README's four questions. | Row-level raw data (goes to staging). Any ad-hoc exploration (that's for notebooks against the raw table). |
-| **Streamlit app** | Four charts, one per mart table. One `.py` file, read-only BigQuery access. | Any data transformation beyond chart-level filtering (sort, top-N, date range). If logic is creeping in, it belongs in a mart. |
-| **Secret Manager** | Holding the Slack webhook URL and the Streamlit service-account JSON. Rotation on a schedule. | Any config value that isn't secret — those are env vars on Cloud Run, set via Terraform. |
-| **Cloud Logging + alert policy** | Catching ERROR-level logs from any Cloud Run service or a dbt test failure, and firing the Slack webhook. | Dashboarding ops metrics beyond "did it fail." |
-| **Terraform** | Every GCP resource except the project itself, billing, and the state bucket. | GH Archive (external). The dashboard host (Streamlit Community Cloud is configured out-of-band). |
+| **GH Archive** (external) | The source of truth for public GitHub events: one `.json.gz` per UTC hour, at `https://data.gharchive.org/<YYYY-MM-DD-H>.json.gz` with an **unpadded** hour. Measured: every hour probed has been present, live at `:05:03`–`:05:04`. | Any reliability promise. Missing or late hours are handled downstream (contract §3.3). |
+| **Cloud Scheduler** | Two prod jobs: hourly ingest, daily dbt at 01:30 UTC. Calling each service with its identity. | Retries (the job's retry count is 0; ingest retries inside its own run) and any other logic. |
+| **Cloud Run: ingest** | Fetching an hour (and retrying recent hours that have no success), validating it, writing Parquet to GCS, loading it into raw with `WRITE_TRUNCATE` on the hour, and appending one `raw_ingest_audit` row per attempt. Fails fast; follows the retry/alert rule in contract §3.3. | Transformation (dbt), scheduling (Scheduler), and triggering dbt. |
+| **GCS: `osp-raw-events-<env>`** | The recovery copy of each hour's Parquet, laid out `gharchive/year=/month=/day=/hour=`. 14-day lifecycle (dev: 7), soft delete off. Reloading from it is a free load job. | Serving queries. |
+| **BigQuery: `osp_raw_<env>`** | `raw_gharchive_events`: one row per GH Archive event as sent, with `payload` kept as JSON, partitioned by hour and clustered on `repo_id`, kept 3 days. `raw_ingest_audit`: one row per ingest attempt, kept. | Business logic, aggregation, deduplication. |
+| **Cloud Run: dbt** | Running `dbt build` for the build's window (yesterday plus catch-up days, contract §1), with every test, once a day. Whether it's a Cloud Run service or job is decided in the ingest ADR. | Scheduling. Reading GCS (it reads raw through BigQuery only). |
+| **BigQuery: `osp_staging_<env>`** | `stg_events`: each hour's latest successful attempt, with suppressed, out-of-range and duplicate rows dropped and counted, plus the extracted `payload_action`; kept 3 days. `stg_repos`, `stg_actors`. | Business metrics. |
+| **BigQuery: `osp_analytics_<env>`** | `fct_events` (one row per event with boolean flags, 400 days), `dim_repos` and `dim_actors` (kept), and the four marts that answer the README's questions. | Raw event text. |
+| **Language lookup** | Filling `dim_repos.primary_language` from GitHub's API. | Anything else. Details in the M4 language ADR. |
+| **Streamlit app** | Four charts, one per mart. Loads each mart once per refresh, filters in pandas, caches an hour, shows "data unavailable" instead of a stack trace. | Transformation beyond chart-level filtering. If logic creeps in, it belongs in a mart. |
+| **Secret Manager** (prod) | The record copy of the Slack webhook, and the language lookup's GitHub token. | The dashboard key, which lives only in Streamlit's secrets (`security.md` §3.1). Non-secret config. |
+| **Cloud Logging + alert policy** | Turning any `ERROR` log from ingest or dbt into a Slack message. | Dashboards of ops metrics. |
+| **Terraform** | Every GCP resource listed under "Infra" in §2. | What's listed there as outside it. |
 
 ## 4. Trace one record end-to-end
 
-A single GitHub event — say, a `WatchEvent` (star added) by actor
-`octocat` on repo `octocat/hello-world` at `2026-10-05T14:23:17Z` —
-walks the pipeline like this. The timestamps are illustrative but
-anchored to real cron behavior.
+A single GitHub event, say a `WatchEvent` (a star) by actor `octocat` on
+repo `octocat/hello-world` at `2026-10-05T14:23:17Z`, walks the pipeline
+like this. The ingest minute is shown as `:15`, the likeliest choice; the
+ingest ADR fixes it.
 
-### 4.1 Birth (external, 14:23:17 UTC)
+### 4.1 Birth (14:23:17 UTC)
 
-GitHub's public events firehose emits the event. GH Archive, which
-tails that firehose, writes it as one JSON line into the hour's
-accumulating file:
-
-```
-https://data.gharchive.org/2026-10-05-14.json.gz
-```
-
-The JSON looks roughly like:
+GitHub's public events feed emits the event. GH Archive writes it as one
+JSON line into the hour's file:
 
 ```json
 {"id":"47301238871","type":"WatchEvent","actor":{"id":583231,"login":"octocat",...},
@@ -161,181 +161,157 @@ The JSON looks roughly like:
  "payload":{"action":"started"},"public":true,"created_at":"2026-10-05T14:23:17Z"}
 ```
 
-The file closes at 15:00:00 UTC and becomes immutable.
+The file closes at 15:00 and goes live at about 15:05 as
+`https://data.gharchive.org/2026-10-05-14.json.gz`.
 
-### 4.2 Fetch (15:05 UTC, Cloud Scheduler fires)
+### 4.2 Ingest (15:15 UTC)
 
-Cloud Scheduler, cron `5 * * * *`, invokes the ingest Cloud Run
-service's `POST /run` endpoint with `{"hour": "2026-10-05-14"}` in the
-body. The 5-minute offset gives GH Archive time to finish writing.
+The hourly Scheduler job calls ingest for hour `2026-10-05-14`. Ingest:
 
-### 4.3 Download + convert (ingest service)
+1. **Downloads** the file, converting the project's padded hour (`-14`)
+   to GH Archive's unpadded form (the same for hours 10–23, different for
+   0–9). It checks the bytes against `Content-Length`, and retries the
+   download up to 3 times on a 5xx or a truncated file.
+2. **Validates** the batch in memory with the Great Expectations suite:
+   required fields present, every `created_at` inside hour 14, accepted
+   types. A failure stops the hour here and logs `ERROR`.
+3. **Writes** `gs://osp-raw-events-prod/gharchive/year=2026/month=10/day=05/hour=14.parquet`.
+   Our event is one row: `event_id="47301238871"`, `event_type="WatchEvent"`,
+   `actor_id=583231`, `repo_id=1296269`, `payload={"action":"started"}`,
+   `created_at=2026-10-05 14:23:17`, `event_hour=2026-10-05 14:00`, and
+   the attempt's `ingest_run_id`.
+4. **Loads** the file into `osp_raw_prod.raw_gharchive_events`, partition
+   `2026101514`, with `WRITE_TRUNCATE`, so a replay replaces the hour
+   instead of duplicating it. The load is free.
+5. **Records** the attempt in `raw_ingest_audit`: lines read = Parquet
+   rows = rows loaded, outcome `success`.
 
-The service:
+### 4.3 Transform (next day, 01:30 UTC)
 
-1. `GET`s `https://data.gharchive.org/2026-10-05-14.json.gz`. Non-2xx raises
-   (fail-fast per `DECISIONS.md` §6). Zero-byte body raises.
-2. Streams the gzip through a line-by-line JSON decoder (never
-   materialises the whole file in memory).
-3. Writes rows to a Parquet file in a temp dir using the schema fixed in
-   `ingest/schema.py`. Our `WatchEvent` becomes one row:
-   `event_id="47301238871", event_type="WatchEvent", actor_id=583231,
-    actor_login="octocat", repo_id=1296269, repo_name="octocat/hello-world",
-    payload_action="started", created_at=2026-10-05T14:23:17Z`.
-4. Uploads the Parquet file to
-   `gs://osp-raw-events-prod/gharchive/year=2026/month=10/day=05/hour=14.parquet`.
-5. Issues a BigQuery load job pointing at that file, appending to
-   `osp_raw_prod.raw_gharchive_events` with `partition=2026-10-05-14`.
-   Schema mismatch raises (fail-fast).
+The daily Scheduler job calls dbt, which builds 2026-10-05 (and any
+catch-up days):
 
-### 4.4 Land in raw (BigQuery load, ~15:06 UTC)
+1. **`stg_events`** reads hour 14's rows from its latest successful
+   attempt, drops nothing for our event, and extracts
+   `payload_action = 'started'`.
+2. **`stg_repos`, `stg_actors`, then `dim_repos`, `dim_actors`** record
+   (or update) `octocat/hello-world` and `octocat`.
+3. **`fct_events`** gets one row with `is_star = true`.
+4. **Marts** rebuild for `as_of_date = 2026-10-05`:
+   - `mart_trending_repos`: `octocat/hello-world`'s `stars_7d` goes up
+     by 1;
+   - `mart_time_of_day_activity`: the (`primary_language` of
+     hello-world, hour 14, `star`) cell goes up by 1;
+   - `mart_language_share` and `mart_contributor_concentration`: no
+     change (a star isn't a PR).
+5. **Tests** run: uniqueness and relationships, the balancing counts
+   (R-01…R-07), and freshness. Any failure exits non-zero, logs `ERROR`,
+   and alerts. The marts keep their last good state.
 
-The row lands in `osp_raw_prod.raw_gharchive_events`, partition
-`2026-10-05-14`, cluster-key `repo_id=1296269`. The row is now
-queryable but has not been transformed.
+### 4.4 Serve (on the next page view)
 
-### 4.5 Transform (dbt build, Cloud Run: dbt, ~15:06–15:08 UTC)
+The dashboard queries each mart's 2026-10-05 partition by literal date,
+once per hour at most, and renders:
+- **Trending repos this week:** hello-world's bar is 1 taller.
+- **Time-of-day activity:** its cell is a little brighter.
 
-Ingest finishes by invoking the dbt Cloud Run service. `dbt build`
-runs:
-
-1. **Staging** — `stg_events` selects from `raw_gharchive_events`
-   WHERE partition date = yesterday-through-today, renames and casts
-   columns, drops any row that fails a `not_null` on `event_id`,
-   `repo_id`, or `created_at`. Our row survives.
-2. **Dimensions** — `dim_repos` upserts `(1296269, 'octocat/hello-world',
-   first_seen, last_seen)`; `dim_actors` upserts
-   `(583231, 'octocat', first_seen, last_seen)`.
-3. **Fact** — `fct_events` inserts one row keyed on `event_id`:
-   `(47301238871, 'WatchEvent', 583231, 1296269, '2026-10-05T14:23:17Z')`.
-4. **Marts** — the four `mart_*` models recompute (fully or
-   incrementally, per model config):
-   - `mart_trending_repos` — a 7-day rolling count of `WatchEvent`,
-     `PullRequestEvent`, `PushEvent` per repo, with week-over-week
-     delta. `octocat/hello-world`'s star count ticks up by 1.
-   - `mart_language_share` — unchanged by this event (no language
-     signal in a `WatchEvent`).
-   - `mart_contributor_concentration` — unchanged (not a commit event).
-   - `mart_time_of_day_activity` — the hour-14 bucket for the repo's
-     primary language ticks up by 1.
-5. **Tests** — every model's `not_null`, `unique`, and freshness tests
-   run. A failure fails the build (non-zero exit) and triggers the
-   alert path; downstream models do not run.
-
-### 4.6 Serve (Streamlit app, on next page view)
-
-A visitor opens the dashboard. The Streamlit app opens a BigQuery
-client (`with bigquery.Client() as client:` per `DECISIONS.md` §7),
-issues four `SELECT`s — one per mart table — and renders four charts:
-
-- **Trending repos this week** — a bar chart; `octocat/hello-world`'s
-  bar is 1 taller than it was an hour ago.
-- **Language contributor share** — a stacked area chart; unchanged by
-  this event.
-- **Contributor concentration per repo** — a histogram; unchanged.
-- **Time-of-day activity patterns** — a heatmap; the (hour=14,
-  language=primary-of-hello-world) cell is 1 brighter.
-
-Total latency from event-time to dashboard-visible: ~45 minutes in the
-median case (event at :23 → GH Archive closes at :00 → scheduler fires
-at :05 → load+dbt done by :08 → next page view).
+**Latency:** an event becomes visible between about 1.5 hours later (one
+created just before midnight UTC, built at 01:30) and about 25.5 hours
+later (one created just after midnight, which waits for the next day's
+build), plus up to an hour of dashboard cache. Our 14:23 star shows up
+about 11 hours later. That's the
+accepted price of a once-a-day build (cost model §4.2).
 
 ## 5. Data flow summary
 
-The record moves through five stages, each with a fixed interface:
-
 | Stage | Interface | What crosses | Fail-fast check |
 |---|---|---|---|
-| 1. GH Archive → ingest | HTTPS GET of `.json.gz` | gzipped JSONL | HTTP 2xx; non-zero file size |
-| 2. ingest → GCS | GCS write | Parquet file | Row count > 0; schema matches |
-| 3. GCS → BigQuery raw | BQ load job | columnar rows | Schema matches `raw_gharchive_events` |
-| 4. raw → marts (dbt) | SQL `ref()` graph | tables + views | Every model's `not_null`/`unique` tests pass |
-| 5. marts → Streamlit | BigQuery `SELECT` | query results | Mart exists; non-empty for the queried window |
+| 1. GH Archive → ingest | HTTPS GET | gzipped JSONL | 2xx; bytes = `Content-Length`; non-empty (FM-01, 03, 04, 05) |
+| 2. Ingest validation | In memory | parsed events | Great Expectations suite (FM-06, 09, 12) |
+| 3. Ingest → GCS | GCS write | Zstandard Parquet | Parquet rows = lines read (FM-14) |
+| 4. GCS → raw | BigQuery load job | rows | `REQUIRED` schema; rows loaded = Parquet rows (FM-14) |
+| 5. Raw → marts | `dbt build` (daily) | tables | Tests, balancing counts R-01…R-07 |
+| 6. Marts → Streamlit | BigQuery `SELECT` | small result sets | Mart and partition exist, else "data unavailable" (FM-20) |
 
-If stage N fails, stages N+1…5 don't run for that hour. The hour's
-data is missing from the dashboard until the hour is replayed (manual
-re-trigger of the ingest service with the same `{"hour": ...}` body —
-the pipeline is idempotent on hour).
+If ingest fails for an hour, the hour is retried on the next runs and
+alerts per contract §3.3. A replay is a manual call to ingest for that hour
+(RUNBOOK §3.1), and the next daily build catches its day up (FM-17).
 
 ## 6. Failure boundaries
 
-Where failures stop, who notices, and what gets rerun.
+The full list, with IDs that tests reference, is
+[contract §3.3 and §4.6](data_contract.md). In short:
 
 | Failure | Stops at | How it's noticed | Recovery |
 |---|---|---|---|
-| GH Archive 404 (missing hour) | ingest Cloud Run | Cloud Logging ERROR → Slack webhook | Wait; GH Archive sometimes republishes late. If still missing after N hours, log a RUNBOOK entry and move on — the hour is lost. |
-| GH Archive 5xx (transient) | ingest Cloud Run (first try) | Cloud Run auto-retries 3× | Usually self-heals. Alert fires only after all retries exhausted. |
-| GCS write fails (quota, IAM) | ingest Cloud Run | ERROR + alert | Fix IAM / quota in Terraform; re-trigger ingest for the affected hour. |
-| BQ load schema mismatch | ingest Cloud Run (step 5) | ERROR + alert | Means GH Archive changed its schema. Update `ingest/schema.py` and `raw_gharchive_events` DDL via a PR; backfill from GCS Parquet (which succeeded). |
-| dbt model fails to build | dbt Cloud Run | Non-zero exit → ERROR + alert | Fix the model in a PR; re-run `dbt build` manually. Marts stay stale, dashboard shows last successful run. |
-| dbt test fails (`not_null`, `unique`, freshness) | dbt Cloud Run | Non-zero exit → ERROR + alert | Investigate: real data issue or test too strict? Either patch upstream or relax the test — both via PR. |
-| Streamlit can't reach BigQuery | dashboard | Visitor sees "data unavailable" (per `DECISIONS.md` §6: user-facing surfaces degrade, not raise) | Check Streamlit secrets; rotate the service-account key via Secret Manager. |
+| Hour missing, late, truncated, or a 5xx (FM-01…05) | Ingest | 3rd failed scheduled attempt logs `ERROR` → Slack | Retried automatically; then a replay once GH Archive publishes (RUNBOOK §3.1–§3.2) |
+| Bad content in a file (FM-06, 09, 12) | Ingest, before the load | `ERROR` on the first attempt → Slack | A PR fixing the data handling or the expectation, then a replay |
+| Ingest killed mid-run (FM-18) | Ingest | Cloud Run's crash log → Slack | The hour has no success, so the next run retries it |
+| dbt build or test failure (FM-19) | dbt | Non-zero exit → `ERROR` → Slack | Fix via PR (RUNBOOK §3.3); the next build catches the day up |
+| Query quota exceeded (FM-15) | dbt or dashboard | `ERROR` → Slack; dashboard shows "data unavailable" | Wait for the reset; find what used the quota |
+| Dashboard can't load a mart (FM-20) | Dashboard | "Data unavailable" to the viewer | RUNBOOK §3.6 |
+| Spend over budget | Whole project | Kill switch unlinks billing; budget email | RUNBOOK §3.5 |
 
-Note: **nothing retries silently past the Cloud Run layer.** Cloud
-Run's own retry policy handles transient HTTP flaps; everything above
-that is explicit and alerted.
+**Nothing retries silently.** Ingest retries its own downloads and recent
+hours on a fixed rule, and records every attempt; nothing else retries.
 
 ## 7. Security boundaries
 
-What can read/write what. The full matrix lands in `docs/access_matrix.md`
-(backlog A8); this is the summary.
+A summary. The authority is the [access matrix](access_matrix.md); the
+policies are in the [security doc](security.md).
 
-- **GH Archive (external):** public, no auth, read-only.
-- **GCS `osp-raw-events-<env>`:** writable only by the ingest
-  service account (`osp-ingest-<env>@...`). Readable by that SA and
-  by the dbt SA (`osp-dbt-<env>@...`). No public access, no human
-  developer access in `prod` — read access to `prod` goes through a
-  separate reviewer SA.
-- **BigQuery datasets:**
-  - `osp_raw_<env>`: write = ingest SA, read = dbt SA + dashboard SA.
-  - `osp_staging_<env>` and `osp_analytics_<env>`: write = dbt SA, read
-    = dashboard SA + reviewer SA.
-- **Streamlit app → BigQuery:** uses the `osp-dashboard-<env>` SA
-  which has `roles/bigquery.dataViewer` on `osp_analytics_<env>` only.
-  Cannot see raw or staging data.
-- **GitHub Actions → GCP:** Workload Identity Federation. No
-  long-lived keys. The federation is scoped to the specific repo and
-  branch.
-- **Secret Manager:** only the Cloud Run services that need a secret
-  can read it. Written by Terraform (as empty shells) and populated
-  manually with real values once per secret, out-of-band.
-- **Human (Robert) access:** `Owner` on the GCP project (unavoidable,
-  solo). Day-to-day work uses `gcloud auth application-default login`
-  which issues short-lived credentials; no service-account key JSON
-  files on the laptop.
-
-All data in the pipeline is **public** (GH Archive is a public
-re-publishing of GitHub's public events firehose). There is no PII,
-no proprietary data, no regulatory classification. The IAM strictness
-above is practice, not a legal requirement.
+- **Each job has its own service account,** with grants only on what it
+  touches:
+  - ingest writes the bucket and the raw dataset;
+  - dbt reads raw and writes staging and analytics, through BigQuery
+    only, never GCS;
+  - the Scheduler identity can only invoke the two services;
+  - the dashboard identity reads `osp_analytics_<env>` and runs queries,
+    capped by a per-user daily quota.
+- **No key files, with one exception.** Cloud Run uses attached
+  identities; GitHub Actions uses Workload Identity Federation pinned to
+  the repo's numeric ID. The exception is the dashboard's read-only key,
+  which lives only in Streamlit's secrets, because Streamlit Community
+  Cloud can't use federation.
+- **Prod is guarded outside IAM, too.** Terraform apply and deploys run
+  only from `main`, through GitHub Environments that need the author's
+  approval.
+- **Agents have no prod credentials at all.** The build agent's bot
+  identity reaches only BigQuery and one bucket in the dev project.
+- **Humans:** the author is Owner of both projects (a solo project can't
+  avoid that), and keeps that login off the agent's machine. There's no
+  separate reviewer identity.
+- **All pipeline data is public** (GH Archive). Handles are public but
+  identifiable, so the dashboard shows aggregates and repo names, never
+  individual actors (`security.md` §2.2).
 
 ## 8. What this doc doesn't cover
 
-Pointers so a reader knows where else to look.
-
-- **Why these tools** → [`ADR 0001`](adr/0001-tech-stack.md).
-- **Locked operating decisions** (region, environments, naming,
-  secrets policy, fail-fast philosophy, resource-management
-  convention, scope boundaries) → [`DECISIONS.md`](../DECISIONS.md).
-- **Column-level data contracts** (grain, columns, freshness per mart)
-  → `docs/data_contract.md` (backlog A7, not yet written).
-- **Full IAM matrix** → `docs/access_matrix.md` (backlog A8, not yet
-  written).
-- **Runbook / on-call** → `RUNBOOK.md` (backlog A9, not yet written).
-- **Cost model** → `docs/cost_model.md` (backlog A11, not yet
-  written).
+- **Why these tools:** [ADR 0001](adr/0001-tech-stack.md).
+- **How agents build it, and the dev/prod split:** [ADR 0002](adr/0002-agentic-build-out-and-isolated-dev.md).
+- **Locked operating decisions:** [`DECISIONS.md`](../DECISIONS.md).
+- **Tables, columns, failure modes, balancing counts:** [`data_contract.md`](data_contract.md).
+- **Who can access what:** [`access_matrix.md`](access_matrix.md).
+- **Credentials, data classes, disclosure:** [`security.md`](security.md).
+- **Cadence, retention, quotas, spend:** [`cost_model.md`](cost_model.md).
+- **What to do when something breaks:** [`RUNBOOK.md`](../RUNBOOK.md).
+- **Ingest schedule minute, backfill, dbt as service or job:** the ingest
+  ADR (roadmap M3).
 
 ## 9. Review date
 
-Revisit when any of:
+Revisit when:
+- the ingest ADR lands (fill in the minute and the dbt runtime shape);
+- the first prod run completes at the cutover (replace §4's illustrative
+  timings with measured ones);
+- a component boundary moves, or a new source or environment is added
+  (both need an ADR, DECISIONS §11).
 
-- The first ingest-to-dashboard end-to-end run completes (Phase D). The
-  trace in §4 will have real numbers to replace the illustrative ones.
-- A component boundary moves (e.g., ingest and dbt collapse into a
-  single Cloud Run service, or an orchestrator replaces Cloud
-  Scheduler).
-- A new source or environment is added — both require ADRs under
-  `DECISIONS.md` §11.
+Otherwise, re-read alongside ADR 0001 at its 2027-04-05 checkpoint.
 
-Otherwise, re-read alongside ADR 0001 at its scheduled 2027-04-05
-checkpoint.
+## 10. Change log
+
+| Date | Change |
+|---|---|
+| 2026-10-05 | Initial version (A5). |
+| 2026-11-18 | Drift fix (roadmap M1): hourly ingest plus a daily dbt build from its own Scheduler job; ingest no longer invokes dbt; Great Expectations in ingest; Zstandard Parquet; retention per table instead of "keep forever"; measured file sizes and publication time; no `PushEvent` in the trace; retries inside ingest, not Cloud Run or Scheduler; no Dockerfile story (DECISIONS §10); `raw_ingest_audit`, the language lookup and the kill switch added; security summary aligned with the access matrix (dbt never reads GCS, no reviewer identity, author is Owner, dashboard key in Streamlit secrets); pointers to the docs that now exist. |

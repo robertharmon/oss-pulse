@@ -86,7 +86,7 @@ author clears that batch sets the pace of those milestones.
 - [x] **A12** security posture (`docs/security.md`).
 - [x] **A10** roadmap (this doc) and **A13** ways of working. Approved and
   merged; `CLAUDE.md` points at both.
-- [ ] **`architecture.md` drift fix.** Done when it matches the current
+- [x] **`architecture.md` drift fix.** Done when it matches the current
   decisions:
   - daily dbt from its own Scheduler job; ingest doesn't invoke dbt;
   - retention instead of "keep forever";
