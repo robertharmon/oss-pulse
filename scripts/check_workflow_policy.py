@@ -11,7 +11,8 @@ import re
 import sys
 from pathlib import Path
 
-WORKFLOW_DIR = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+# Relative to the current directory: run it from the repo root.
+WORKFLOW_DIR = Path(".github") / "workflows"
 
 _USES = re.compile(r"^\s*-?\s*uses:\s*['\"]?([^\s'\"#]+)", re.MULTILINE)
 _PINNED_ACTION = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
