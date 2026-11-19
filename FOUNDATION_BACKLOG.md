@@ -75,7 +75,7 @@ or cloud resources so every subsequent choice has something to check against.
   grows with every real incident. Done when: committed and ready to accept
   entries.
 
-- [~] **A10. 90-day roadmap** — `docs/roadmap.md`. Milestones for months 1,
+- [x] **A10. 90-day roadmap** — `docs/roadmap.md`. Milestones for months 1,
   2, 3 with measurable "done" criteria for each. Done when: committed and
   reviewed; serves as the content-phase sequencer after foundation ends.
 
@@ -127,7 +127,7 @@ or cloud resources so every subsequent choice has something to check against.
   audit logging posture, incident disclosure path. Done when: committed, and
   informs the Secret Manager + IAM wiring in Phase C.
 
-- [~] **A13. Solo-project ways-of-working** — `docs/ways_of_working.md`.
+- [x] **A13. Solo-project ways-of-working** — `docs/ways_of_working.md`.
   The solo analog of a team's engineering agreements: session cadence,
   self-review discipline, when to interrupt a session vs. ship-and-move-on,
   what "done" means for a solo PR. Done when: committed; subsequent sessions
@@ -323,3 +323,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-11-11 | A9 (runbook) closed. |
 | 2026-11-18 | A11 (cost model) closed; its four decisions approved. A10 input on storage retention replaced by "apply A11 decisions to architecture.md". |
 | 2026-11-18 | A12 (security posture) closed. |
+| 2026-11-18 | A10 (roadmap, `docs/roadmap.md`) and A13 (ways of working) closed, both approved by the author. Phase A is complete. |
