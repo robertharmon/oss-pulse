@@ -77,18 +77,35 @@ intention.
 
 ## Repository map
 
-A full map will land once the skeleton is in place. For now:
+Each code folder has a short README saying what belongs in it.
 
 ```
 oss-pulse/
-├── README.md                  ← this file
+├── README.md, SECURITY.md     ← this file; how to report a security problem
 ├── CLAUDE.md                  ← Claude Code session-startup instructions
 ├── DECISIONS.md               ← locked operating decisions
-├── FOUNDATION_BACKLOG.md      ← phased foundation work (ordered)
-├── OPEN_LOOPS.md              ← ad-hoc housekeeping queue
-├── documentation/            ← per-session docs + decision log
+├── CONVENTIONS.md             ← naming, Python/SQL style, PRs, comments
+├── FOUNDATION_BACKLOG.md      ← foundation work (Phase A done; B–D open)
+├── OPEN_LOOPS.md, QUESTIONS.md← small chores; questions for the author
+├── RUNBOOK.md                 ← alert routing, procedures, incident log
+├── ingest/                    ← hourly ingest service (GH Archive → GCS → raw)
+├── dbt/                       ← dbt project and the daily build service
+├── dashboard/                 ← Streamlit app
+├── killswitch/                ← billing kill-switch function
+├── terraform/                 ← GCP infrastructure as code
+├── scripts/                   ← CI verifier scripts
+├── tests/                     ← Python tests, fixtures, expected outputs
+├── .github/                   ← CI workflows, PR template, CODEOWNERS
+├── documentation/             ← per-session docs + decision log
 └── docs/
+    ├── roadmap.md             ← milestones to v1 (the tracker)
+    ├── ways_of_working.md     ← roles, definition of done, when to ask
     ├── architecture.md        ← system diagram + end-to-end record trace
+    ├── data_contract.md       ← tables, failure modes, balancing counts
+    ├── access_matrix.md       ← who/what can access each resource
+    ├── security.md            ← credentials, data classes, disclosure
+    ├── cost_model.md          ← cadence, retention, quotas, spend
+    ├── author_setup.md        ← accounts and settings only the author creates
     └── adr/                   ← Architecture Decision Records
 ```
 
