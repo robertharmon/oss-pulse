@@ -38,6 +38,12 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check --output-format=github .
       - run: uv run ruff format --check .
+      # Cloud Run functions install from requirements.txt; it must match uv.lock.
+      - name: killswitch/requirements.txt matches uv.lock
+        run: |
+          uv export --package osp-killswitch --no-dev --no-emit-workspace --frozen \
+            --output-file killswitch/requirements.txt -q
+          git diff --exit-code killswitch/requirements.txt
 
   typecheck:
     runs-on: ubuntu-24.04
