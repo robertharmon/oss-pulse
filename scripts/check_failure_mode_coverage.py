@@ -23,16 +23,20 @@ _ROW = re.compile(rf"^\|\s*({_ID})\s*\|(.*)$", re.MULTILINE)
 _MARKER = re.compile(rf"""\.(?:failure_mode|metamorphic)\(\s*["']({_ID})["']""")
 _TAGS = re.compile(r"tags\s*[:=]\s*\[([^\]]*)\]")
 _ID_IN_TAGS = re.compile(rf"\b({_ID})\b")
+# Status markers are italic (single asterisk): `*retired*`, `*Pending: …*`.
+# Bold words like `**pending**` are prose, not markers.
+_RETIRED = re.compile(r"(?<!\*)\*retired\*(?!\*)", re.IGNORECASE)
+_PENDING = re.compile(r"(?<!\*)\*pending:", re.IGNORECASE)
 
 
 def parse_contract_ids(contract_text: str) -> dict[str, str]:
     """Map each FM/R/M ID in the contract's tables to 'live', 'pending' or 'retired'."""
     ids: dict[str, str] = {}
     for match in _ROW.finditer(contract_text):
-        rest = match.group(2).lower()
-        if "*retired*" in rest:
+        rest = match.group(2)
+        if _RETIRED.search(rest):
             status = "retired"
-        elif "*pending" in rest:
+        elif _PENDING.search(rest):
             status = "pending"
         else:
             status = "live"
