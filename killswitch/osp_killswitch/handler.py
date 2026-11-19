@@ -13,9 +13,12 @@ API error raises, so Pub/Sub redelivers the message and the failure is
 logged as an ERROR, which alerts.
 """
 
+import base64
+import binascii
+import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class Mode(Enum):
@@ -46,14 +49,42 @@ class BillingClient(Protocol):
     def unlink_billing(self, project_id: str) -> None: ...
 
 
+def _amount(body: dict[str, Any], key: str) -> float:
+    value = body.get(key)
+    # bool is a subclass of int in Python; true/false isn't an amount.
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"budget notification: {key} must be a number, got {value!r}")
+    return float(value)
+
+
 def parse_notification(data: bytes) -> BudgetNotification:
     """Decode a budget notification's message data (base64-encoded JSON)."""
-    raise NotImplementedError
+    try:
+        body = json.loads(base64.b64decode(data, validate=True))
+    except (binascii.Error, ValueError) as error:
+        raise ValueError(f"budget notification: not base64 JSON ({error})") from error
+    if not isinstance(body, dict):
+        raise ValueError("budget notification: expected a JSON object")
+    # Currency and name don't affect the decision; a missing one is logged
+    # as "" rather than failing (which would make Pub/Sub redeliver forever).
+    return BudgetNotification(
+        cost_amount=_amount(body, "costAmount"),
+        budget_amount=_amount(body, "budgetAmount"),
+        currency=str(body.get("currencyCode", "")),
+        budget_name=str(body.get("budgetDisplayName", "")),
+    )
 
 
 def parse_mode(value: str | None) -> Mode:
     """The kill switch's mode from its setting; unset means simulate."""
-    raise NotImplementedError
+    if not value:
+        return Mode.SIMULATE
+    try:
+        return Mode(value)
+    except ValueError as error:
+        raise ValueError(
+            f"KILLSWITCH_MODE must be 'simulate' or 'live', got {value!r}"
+        ) from error
 
 
 def decide_and_act(
@@ -63,4 +94,12 @@ def decide_and_act(
     client: BillingClient,
 ) -> Action:
     """Unlink billing (or pretend to) when spend is over the budget."""
-    raise NotImplementedError
+    # Google's reference implementation: at or under budget, do nothing.
+    if notification.cost_amount <= notification.budget_amount:
+        return Action.NONE
+    if not client.billing_enabled(project_id):
+        return Action.ALREADY_DISABLED
+    if mode is Mode.SIMULATE:
+        return Action.SIMULATED
+    client.unlink_billing(project_id)
+    return Action.DISABLED
