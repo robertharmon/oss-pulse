@@ -1,0 +1,46 @@
+# Files that define a check, or could weaken one, need the author's review
+# (ADR 0002 §3). With "require review from code owners" on the
+# build/agentic ruleset, an agent can't loosen a check in the same PR that
+# would otherwise fail it.
+#
+# Deliberately no `*` rule: that would put every build/agentic PR behind
+# the author. `main` is protected by its own required approval instead.
+# Later rules override earlier ones; every rule here names the same owner.
+
+# Repo rules, CI, this file
+/.github/                       @robertharmon
+/.claude/                       @robertharmon
+
+# Tool configs and dependency pins
+/pyproject.toml                 @robertharmon
+**/pyproject.toml               @robertharmon
+/uv.lock                        @robertharmon
+/.python-version                @robertharmon
+/.sqlfluff                      @robertharmon
+/.sqlfluffignore                @robertharmon
+/.pre-commit-config.yaml        @robertharmon
+/.gitignore                     @robertharmon
+/.gitattributes                 @robertharmon
+
+# Verifier scripts (backlog B11)
+/scripts/                       @robertharmon
+
+# Test inputs and hand-computed expected outputs
+/tests/fixtures/                @robertharmon
+/tests/expected/                @robertharmon
+
+# dbt: project config, model contracts and tests, unit-test expectations
+/dbt/dbt_project.yml            @robertharmon
+/dbt/packages.yml               @robertharmon
+/dbt/package-lock.yml           @robertharmon
+/dbt/**/schema.yml              @robertharmon
+/dbt/**/_unit_tests.yml         @robertharmon
+/dbt/tests/                     @robertharmon
+/dbt/seeds/                     @robertharmon
+
+# Specs the checks are diffed against
+/docs/data_contract.md          @robertharmon
+/docs/access_matrix.md          @robertharmon
+
+# Infrastructure
+/terraform/                     @robertharmon

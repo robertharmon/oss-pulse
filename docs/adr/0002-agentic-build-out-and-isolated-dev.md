@@ -92,18 +92,21 @@ other environment.
 - **A ruleset on `build/agentic`** requires PRs and blocks force-pushes
   and deletion from the start. Required CI checks are added as they exist
   (B11). The bot has no bypass.
-- **`main` requires one approving review** from the author (code owner of
-  `*`). The bot, a Write collaborator, can open a PR into `main` but can't
-  merge it.
+- **`main` requires one approving review** from the author. The bot, a
+  Write collaborator, can open a PR into `main` but can't merge it.
+  (CODEOWNERS has no `*` rule: since one CODEOWNERS file serves every
+  branch, a `*` rule would also put every `build/agentic` PR behind the
+  author. `main`'s required approval does that job instead.)
 - **CODEOWNERS plus required code-owner review** for every file that
   defines or could weaken a check:
   - `.github/**`, including `CODEOWNERS` itself;
   - `.claude/**`;
   - `tests/fixtures/**`, `tests/expected/**`;
-  - the verifier scripts;
-  - tool configs: `pyproject.toml`, `.sqlfluff`,
-    `.pre-commit-config.yaml`, `dbt_project.yml` and dbt `schema.yml`
-    files;
+  - the verifier scripts (`scripts/**`);
+  - tool configs and pins: every `pyproject.toml`, `uv.lock`,
+    `.sqlfluff`, `.pre-commit-config.yaml`, `.gitignore`,
+    `dbt_project.yml`, dbt `schema.yml` and `_unit_tests.yml` files, dbt
+    tests and seeds;
   - `docs/data_contract.md`, `docs/access_matrix.md`;
   - `terraform/**`.
 
