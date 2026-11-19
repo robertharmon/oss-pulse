@@ -37,6 +37,21 @@ Three audiences, three questions:
 tests → notes. The grain is the most load-bearing field; most contract
 bugs are "two rows where the grain said one."
 
+**Rules that apply to every entry** (decided in
+[`cost_model.md`](cost_model.md) §8, 2026-11-18):
+
+- **`not_null` is a schema constraint, not a test query.** Raw columns
+  marked non-nullable are `REQUIRED` in the BigQuery schema, so the load
+  job rejects a null. dbt models use `contract: enforced` with `not_null`
+  constraints. Wherever an entry lists `not_null`, read it this way. Every
+  other test (`unique`, `relationships`, ranges, accepted values,
+  singular tests) runs as a dbt test.
+- **Cadence.** Ingest loads raw hourly. Everything downstream is built
+  once a day by `dbt build` at 01:30 UTC, for the previous UTC day.
+- **Retention** is set per table below. Long-lived tables (`fct_events`,
+  dimensions, snapshot marts) set `full_refresh: false`, because a full
+  refresh would rebuild them from 3 days of staging and wipe the rest.
+
 ---
 
 ## 2. Vocabulary
@@ -153,7 +168,7 @@ Each has a defined handling pattern. Fail-fast at ingest
 | **Truncated file** | gzip decode error or JSON parse error mid-stream | Fail-fast raises; alert fires. Re-trigger manually once GH Archive republishes. |
 | **Schema drift (new event type)** | New `event_type` value appears in `stg_events` | Non-fatal at raw layer (we store the raw JSON); staging dedupe + mart logic may silently ignore it. Add an `accepted_values` dbt test on `event_type` so new types surface as test failures within a day. |
 | **Schema drift (new field in payload)** | New key inside `payload` JSON | Raw layer preserves `payload` as a JSON column; new fields are invisible to downstream models until explicitly extracted. No action needed unless a mart wants the new field. |
-| **Schema drift (removed field)** | Expected top-level field becomes NULL across the hour | Fail-fast: ingest asserts the first record contains `id`, `type`, `actor`, `repo`, `created_at`. Missing any raises. Partial-row drops (one field goes away) surface as `not_null` test failures in staging within the hour. |
+| **Schema drift (removed field)** | Expected top-level field becomes NULL across the hour | Fail-fast: ingest asserts the first record contains `id`, `type`, `actor`, `repo`, `created_at`. Missing any raises. A null in any `REQUIRED` raw column fails that hour's load; the hour is retried on the next runs and alerts after 3 attempts, like a missing hour. |
 | **Zero-byte file** | `Content-Length: 0` or gzip-decoded empty body | Fail-fast raises at ingest; alert fires. Usually a GH Archive publication glitch; manually re-trigger once GHA republishes. |
 
 ### 3.4 What we do *not* promise upstream
@@ -180,8 +195,15 @@ backfill, debugging, and schema-drift detection.
   `created_at` to hour-aligned timestamp, declared as a BigQuery
   time-unit partition on `created_at`).
 - **Clustering:** `repo_id`.
+- **Retention:** 3 days (partition expiration). GCS keeps each hour's
+  Parquet for 14 days, and reloading from it is a free load job. Loading
+  an hour older than 3 days into this table deletes it on arrival, so
+  backfills need their own path (cost model §5.3).
 - **Freshness target:** newest `event_hour` within 2h of now (allows
   for the scheduler offset + ingest runtime + alert fatigue margin).
+  Checked by the daily build's source-freshness test, so a stalled ingest
+  can go unnoticed for up to ~24h. Ingest *failures* still alert within
+  the hour.
 - **Columns:**
 
   | Column | Type | Nullable | Notes |
@@ -201,23 +223,33 @@ backfill, debugging, and schema-drift detection.
   | `ingest_run_id` | STRING | No | UUID of the ingest invocation that landed the row. Enables backfill audit. |
   | `ingested_at` | TIMESTAMP | No | When the row landed in BigQuery. |
 
-- **Tests:** `not_null` on every non-nullable column; `unique` on
-  `event_id`; freshness check per the target above.
+- **Tests:** `not_null` on every non-nullable column (as `REQUIRED`
+  columns; ingest's pyarrow schema marks them `nullable=False` to match);
+  `unique` on `event_id`; freshness check per the target above.
 
 ### 4.2 `osp_staging_<env>.stg_events`
 
 - **Grain:** one row per deduplicated event — `event_id` is unique.
 - **Writer:** dbt. Reads `raw_gharchive_events`.
 - **Readers:** dbt (fact/mart layer); never read by dashboards.
-- **Materialization:** incremental on `event_hour`.
-- **Freshness target:** same as raw (2h).
-- **Columns:** same shape as raw, with these transformations:
+- **Materialization:** incremental on `event_hour`, `insert_overwrite`
+  strategy (dbt's `merge` would scan the whole table every build).
+- **Retention:** 3 days (partition expiration), like raw. It carries the
+  full `payload`, so it's as large as raw.
+- **Freshness target:** 28h. Built once a day for the previous UTC day;
+  just before the next build finishes, the newest `event_hour` is ~26.6h
+  old.
+- **Columns:** same shape as raw, plus `payload_action`, with these
+  transformations:
   - `event_type` is `accepted_values`-tested (see §4.3).
   - `created_at` is cast and verified to be within a sane window
     (`BETWEEN TIMESTAMP("2015-01-01") AND CURRENT_TIMESTAMP() +
     INTERVAL 1 HOUR`); rows outside the window are dropped and
     counted in a load-audit view.
-  - `payload` stays as JSON; mart models extract fields they need.
+  - `payload` stays as JSON.
+  - `payload_action` (STRING, nullable) is extracted from
+    `payload.action` here, once. `fct_events` reads it instead of the JSON,
+    which may bill the whole `payload` column on every read.
 - **Tests:** `not_null` on `event_id`, `event_type`, `repo_id`,
   `actor_id`, `created_at`; `unique` on `event_id`; `accepted_values`
   on `event_type`.
@@ -253,7 +285,7 @@ Updating the list is a contract change — see §7.
   `first_seen_at`, `last_seen_at`.
 - **`stg_actors`** — one row per unique `actor_id`. Columns:
   `actor_id` (PK), `actor_login`, `first_seen_at`, `last_seen_at`.
-- **Freshness:** 2h.
+- **Freshness:** 28h.
 - **Tests:** `not_null` on PK; `unique` on PK; relationship test from
   `stg_events` to each.
 
@@ -277,14 +309,19 @@ Not consumed by the dashboard directly, but marts build on it, so its
 contract matters.
 
 - **Grain:** one row per event (`event_id` unique).
-- **Freshness:** 2h.
+- **Freshness:** 28h.
+- **Materialization:** incremental, `insert_overwrite` on daily
+  partitions of `event_hour`; `full_refresh: false`.
+- **Retention:** 400 days (partition expiration). Covers the 90-day
+  concentration window and 13 months of the language chart.
 - **Columns:** `event_id` (PK), `event_type`, `event_hour`,
   `created_at`, `actor_id` (FK → `dim_actors`), `repo_id` (FK →
   `dim_repos`), plus event-type-specific flags extracted from
   `payload`:
   - `is_star` (BOOL) — `event_type = 'WatchEvent'`.
   - `is_pr_opened` (BOOL) — `event_type = 'PullRequestEvent'` AND
-    `payload.action = 'opened'`.
+    `payload.action = 'opened'`. (All `payload.action` conditions in this
+    list read `stg_events.payload_action`.)
   - `is_pr_merged` (BOOL) — `event_type = 'PullRequestEvent'` AND
     `payload.action = 'merged'`. In this schema, "merged" and "closed"
     are distinct `action` values on PullRequestEvent; `merged` fires
@@ -319,7 +356,10 @@ contract matters.
   `last_seen_at`.
 - **`dim_actors`** — `actor_id` (PK), `actor_login`, `first_seen_at`,
   `last_seen_at`.
-- **Freshness:** 2h.
+- **Freshness:** 28h.
+- **Retention:** kept; `full_refresh: false`. `fct_events` has no
+  `repo_name` or `actor_login`, so a lost dimension can only be rebuilt by
+  backfilling from GH Archive.
 - **Tests:** `not_null` and `unique` on PK.
 
 ### 5.3 `mart_trending_repos`
@@ -331,8 +371,9 @@ feed — see §4.3. README wording drift tracked in §8.)
 
 - **Grain:** one row per `(repo_id, as_of_date)` — a daily snapshot of
   each repo's 7-day rolling counts.
-- **Freshness:** 2h (recomputed hourly with the latest full day
-  bucketed on the previous full UTC day).
+- **Freshness:** 28h (recomputed daily for the previous full UTC day).
+- **Partitioning:** `as_of_date`. **Retention:** 30 days of snapshots
+  (partition expiration); `full_refresh: false`.
 - **Columns:**
 
   | Column | Type | Notes |
@@ -355,7 +396,7 @@ each language, month over month.
 
 - **Grain:** one row per `(month, language)`. `month` is a `DATE` set
   to the first day of the month.
-- **Freshness:** 24h — the mart updates once per day; the dashboard
+- **Freshness:** 28h — the mart updates once per day; the dashboard
   shows the latest complete month plus the running partial month.
 - **Columns:**
 
@@ -382,7 +423,9 @@ with the caveat that it measures contributors-who-propose-changes
 rather than contributors-who-commit. README wording drift tracked in §8.
 
 - **Grain:** one row per `(repo_id, as_of_date)`. Daily snapshot.
-- **Freshness:** 24h.
+- **Freshness:** 28h.
+- **Partitioning:** `as_of_date`. **Retention:** 30 days of snapshots
+  (partition expiration); `full_refresh: false`.
 - **Columns:**
 
   | Column | Type | Notes |
@@ -406,7 +449,7 @@ from the feed. README wording drift tracked in §8.)
 
 - **Grain:** one row per `(language, hour_of_day, event_type_bucket)`.
   `hour_of_day` is 0–23 UTC.
-- **Freshness:** 24h.
+- **Freshness:** 28h.
 - **Columns:**
 
   | Column | Type | Notes |
@@ -448,13 +491,18 @@ Which option is live is recorded in the first dbt PR that lands
 - **Auth:** `osp-dashboard-<env>` service account, `roles/bigquery.
   dataViewer` on `osp_analytics_<env>` only (per
   [`architecture.md`](architecture.md) §7).
-- **Access pattern:** one `SELECT` per chart on page load; no caching
-  layer in v1.
+- **Access pattern:** each chart loads its mart once per refresh. For
+  the snapshot marts that's the latest `as_of_date` partition, selected
+  by a literal date (a `MAX(as_of_date)` subquery would scan every
+  partition). Sorting, top-N and date-range filtering happen in pandas.
+  Results are cached with `st.cache_data(ttl=3600)`, shared by all
+  viewers. Queries avoid `CURRENT_DATE()`, which disables BigQuery's free
+  result cache.
 
 ### 6.2 SLA to the viewer
 
-- **Freshness:** matches the slowest mart feeding each chart (2h for
-  trending, 24h for the other three).
+- **Freshness:** 28h for every chart (all four marts build daily), plus
+  up to 1h of dashboard cache.
 - **Availability:** Streamlit Community Cloud's own SLA — effectively
   "usually up, no promises." No alerting on dashboard downtime.
 - **Degradation:** per `../DECISIONS.md` §6, a missing mart renders as
@@ -521,7 +569,9 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 - **README wording drift.** Resolved 2026-11-18: the README's four
   questions now match §5.
 - **Backfill window.** How far back do we backfill when first lighting
-  the pipeline? Likely answered by the first ingest ADR; parked.
+  the pipeline? Likely answered by the first ingest ADR. Constraints from
+  [`cost_model.md`](cost_model.md) §5.3: raw's 3-day expiration means a
+  separate backfill path, and 90 days takes about a week of query quota.
 - **PII posture.** `actor_login` is a GitHub handle — public, but
   identifiable. The security doc (backlog A12) will cover
   classification; this contract treats everything as public.
@@ -540,3 +590,4 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-11-11 | §3.1 URL pattern corrected to an unpadded hour (`-5`, not `-05`); §2 notes the project's own hour stays padded. §3.2 availability corrected from ~55% to 72/72 present: the earlier 404s came from padded URLs (§3.2.1 correction + re-check). §3.3 missing hour downgraded from routine to rare, now alerting after 3 failed attempts instead of a trailing-24h miss-rate threshold. |
 | 2026-11-11 | §5.4 `distinct_contributors` / `total_contributors_this_month` redefined on PR-opened or PR-merged events (the old definition still referenced the absent `PushEvent`); noted shares can sum past 100%. §5.1 `is_pr_merged` re-verified against 3 fresh hours (`merged` action confirmed present) and noted that a merge event's actor is the merger, not the author. |
 | 2026-11-18 | §8 README wording drift marked resolved (README reworded to match §5). |
+| 2026-11-18 | Applied the cost model's approved decisions ([`cost_model.md`](cost_model.md) §8): `not_null` becomes a schema constraint (§1, §3.3, §4.1); daily dbt cadence with 28h freshness on everything below raw, including the three marts that had 24h (§4.2–§5.6, §6.2); retention per table (raw and `stg_events` 3 days, `fct_events` 400 days, snapshot marts 30 days, dims kept) with `full_refresh: false` on long-lived tables; `insert_overwrite` incrementals; `stg_events.payload_action` added; snapshot marts partitioned on `as_of_date`; dashboard loads each mart once and caches (§6.1). |
