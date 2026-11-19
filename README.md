@@ -41,15 +41,22 @@ The entire pipeline exists to serve a small set of analytical questions. The
 mart tables and dashboard are built directly against this list:
 
 1. **Trending repos this week** — repos with the largest week-over-week
-   increase in stars, PRs, or pushes.
+   increase in stars, PRs opened, or PRs merged.
 2. **Language contributor share** — percentage of unique contributors
-   touching each language, month over month.
-3. **Contributor concentration per repo** — Gini coefficient of commits per
-   author. Is a repo sustained by one person or many?
-4. **Time-of-day activity patterns** — commit and PR distribution by hour,
-   split by primary language of the repo (a rough geography proxy).
+   (actors who opened or merged a PR) touching each language, month over
+   month.
+3. **Contributor concentration per repo** — Gini coefficient of PRs opened
+   per actor. Is a repo's work proposed by one person or many?
+4. **Time-of-day activity patterns** — distribution of PRs opened, PRs
+   merged, issues opened and stars by hour, split by primary language of
+   the repo (a rough geography proxy).
 
 Each becomes one `mart_*` table and one chart on the dashboard.
+
+GH Archive's current public feed carries no push events (`PushEvent`): none
+appeared in any hour sampled since October 2026. So no question is phrased
+in terms of commits or pushes. [`docs/data_contract.md`](docs/data_contract.md) §4.3 and §5 have
+the details.
 
 ## Scope boundaries
 
