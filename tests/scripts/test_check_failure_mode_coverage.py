@@ -94,3 +94,18 @@ def test_fails_when_test_references_unknown_id() -> None:
     problems = evaluate({"FM-01": "live"}, covered={"FM-01", "FM-42"}, baseline=set())
     assert len(problems) == 1
     assert "FM-42" in problems[0]
+
+
+def test_markers_inside_string_literals_are_not_coverage() -> None:
+    source = (
+        "files = [\n"
+        "    (Path('t.py'), '@pytest.mark.failure_mode(\"FM-01\")'),\n"
+        "    (Path('u.py'), \"x = '@pytest.mark.metamorphic(\\\"M-03\\\")'\"),\n"
+        "]\n"
+    )
+    assert find_covered_ids([(Path("tests/scripts/test_meta.py"), source)]) == set()
+
+
+def test_marker_on_a_decorator_line_is_coverage() -> None:
+    source = '    @pytest.mark.failure_mode("FM-04")\n    def test_b() -> None: ...\n'
+    assert find_covered_ids([(Path("tests/ingest/test_b.py"), source)]) == {"FM-04"}

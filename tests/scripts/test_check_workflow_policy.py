@@ -49,3 +49,15 @@ def test_requires_top_level_permissions() -> None:
     problems = check_workflow("ci.yml", text)
     assert len(problems) == 1
     assert "permissions" in problems[0]
+
+
+def test_mentions_in_comments_are_not_violations() -> None:
+    text = "# never use pull_request_target here\n" + GOOD
+    assert check_workflow("ci.yml", text) == []
+
+
+def test_rejects_pull_request_target_in_inline_trigger_list() -> None:
+    text = GOOD.replace("on:\n  pull_request:\n", "on: [push, pull_request_target]\n")
+    problems = check_workflow("ci.yml", text)
+    assert len(problems) == 1
+    assert "pull_request_target" in problems[0]
