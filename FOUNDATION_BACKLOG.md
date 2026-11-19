@@ -111,7 +111,8 @@ or cloud resources so every subsequent choice has something to check against.
     is Owner), and line ~135 puts the Streamlit key in Secret Manager
     (it lives in Streamlit secrets). Line ~97 calls dbt a Cloud Run "job";
     the matrix assumes a service. Pick one in the ingest ADR.
-  - **License + making the repo public** (README "License" section).
+  - ~~**License + making the repo public**~~ — stale: the repo is public
+    with an MIT license since its first commit (Session 04).
   - **v1 "done" definition** — when is the project finished?
   - **`ROADMAP.md` duplication** — the "When this backlog is empty" step 2
     copies `docs/roadmap.md` to a second file; keep one.
@@ -300,8 +301,9 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 "building content." At that point:
 
 1. Archive this file to `docs/foundation_backlog_closed.md` for provenance.
-2. Create `ROADMAP.md` from the content-phase plan in `docs/roadmap.md`.
-3. Open the first content-phase PR: the real GH Archive ingest job.
+2. `docs/roadmap.md` becomes the only tracker. (No second `ROADMAP.md`
+   copy; one roadmap is enough.)
+3. Continue with the roadmap's next milestone.
 
 ---
 
