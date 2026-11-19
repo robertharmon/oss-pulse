@@ -26,7 +26,7 @@ Status markers:
   branches get cleaned up on every `git fetch`, no `--prune` flag needed.
   (Global config change; not a repo-local setting.)
 
-## Things to double-check once CI exists (gated on B6)
+## Things to double-check once CI exists (B6 landed 2026-11-18; author action)
 
 - [ ] **Add CI status checks to the `protect-main` ruleset** — the
   "Require status checks to pass" rule is currently in the ruleset but

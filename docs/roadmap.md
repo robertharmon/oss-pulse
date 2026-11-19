@@ -124,7 +124,7 @@ identity) → kill switch live → anything that queries dev BigQuery.
 - [ ] **C9 kill switch, dev.** The agent writes the function and deploy
   script; the author deploys it and runs the drill. **Live before any
   agent BigQuery work in dev.**
-- [ ] **B1–B6, B8, B9:** folder skeleton, `.gitignore`, Python and SQL
+- [x] **B1–B6, B8, B9:** folder skeleton, `.gitignore`, Python and SQL
   toolchains, pre-commit (hooks pinned by SHA), CI jobs (actions pinned by
   SHA), PR template, CODEOWNERS.
 - [ ] **B11 verifier tooling.** The checks:
@@ -157,7 +157,7 @@ identity) → kill switch live → anything that queries dev BigQuery.
 
   (Ingest runtime is measured in M3; Cloud Run runtime and image sizes at
   the cutover.)
-- [ ] **D1, D2, D4:** a hello-world Python module and dbt model pass CI
+- [~] **D1, D2, D4:** (D1 and D4 done; D2 needs dev BigQuery) a hello-world Python module and dbt model pass CI
   against dev; a deliberate lint failure turns CI red, then green.
 
 **Needs the author:** Parts 1–2, deploying the dev kill switch, making
@@ -353,3 +353,4 @@ gates are required checks, and no cutover before every gate is green.
 |---|---|
 | 2026-11-18 | Initial version (A10). Folds in the A10 inputs from `FOUNDATION_BACKLOG.md`. Revised after independent review: dev CI identity in M2; A12 in M1; B11 checks must be required; v1 criteria made measurable and the date moved to after a full invoice month; merge-before-cutover details (Environments first, revert not reset); done-whens that move to the cutover; approval load; fuller costs for both decisions. §4 decisions approved by the author. |
 | 2026-11-18 | Signed off by the author. M1: A10, A13 and the contract additions done; only the `architecture.md` drift fix remains. |
+| 2026-11-18 | M1 done (tag `m1-done`). M2: B1–B6, B8, B9, D1, D4 done. |
