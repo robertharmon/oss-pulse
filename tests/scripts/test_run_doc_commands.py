@@ -1,4 +1,9 @@
-from scripts.run_doc_commands import DocBlock, extract_blocks
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from scripts.run_doc_commands import DocBlock, extract_blocks, main
 
 DOC = """# Title
 
@@ -115,3 +120,88 @@ echo top
         DocBlock(path="a.md", line=1, mode="run", code="echo top\n"),
         DocBlock(path="a.md", line=7, mode="run", code="echo nested\n"),
     ]
+
+
+# --- Audit additions (spec: module docstring; CommonMark fenced code blocks) --
+
+
+def test_tilde_fences_are_fenced_blocks_too() -> None:
+    assert extract_blocks("a.md", "~~~bash run\ntrue\n~~~\n") == [
+        DocBlock(path="a.md", line=1, mode="run", code="true\n"),
+    ]
+
+
+def test_longer_fence_keeps_inner_backtick_lines_as_code() -> None:
+    doc = "````bash run\ncat <<'EOF'\n```\nEOF\n````\n"
+    assert extract_blocks("a.md", doc) == [
+        DocBlock(path="a.md", line=1, mode="run", code="cat <<'EOF'\n```\nEOF\n"),
+    ]
+
+
+def test_tagged_fence_shown_inside_an_example_block_is_not_a_block() -> None:
+    # A doc that shows how to tag a block: the inner fence is content of the
+    # outer (untagged) block, not a block of its own.
+    doc = "````markdown\n```bash run\nrm -rf build\n```\n````\n"
+    assert extract_blocks("a.md", doc) == []
+
+
+def test_multiline_code_keeps_blank_lines() -> None:
+    doc = "intro\n\n```bash run\nset -e\n\necho one\necho two\n```\n"
+    assert extract_blocks("a.md", doc) == [
+        DocBlock(
+            path="a.md", line=3, mode="run", code="set -e\n\necho one\necho two\n"
+        ),
+    ]
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # noqa: S603
+        ["git", *args],  # noqa: S607
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.fixture
+def docs_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    empty = tmp_path / "gitconfig"
+    empty.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    monkeypatch.chdir(root)
+    return root
+
+
+def _track(repo: Path, rel: str, text: str) -> None:
+    (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+    (repo / rel).write_text(text)
+    _git(repo, "add", rel)
+
+
+def test_main_fails_when_a_run_block_exits_non_zero(docs_repo: Path) -> None:
+    _track(docs_repo, "docs/ok.md", "```bash run\ntrue\n```\n")
+    _track(docs_repo, "docs/bad.md", "```bash run\nexit 3\n```\n")
+    assert main() != 0
+
+
+def test_main_only_parses_syntax_only_blocks(docs_repo: Path) -> None:
+    marker = (docs_repo.parent / "ran").as_posix()
+    doc = f'```bash syntax-only\ntouch "{marker}"\nfalse\n```\n'
+    _track(docs_repo, "docs/cutover.md", doc)
+    assert main() == 0  # `false` never ran
+    assert not Path(marker).exists()
+
+
+def test_main_fails_when_a_syntax_only_block_doesnt_parse(docs_repo: Path) -> None:
+    _track(docs_repo, "docs/cutover.md", "```bash syntax-only\nif then fi\n```\n")
+    assert main() != 0
+
+
+def test_main_reads_only_tracked_markdown(docs_repo: Path) -> None:
+    _track(docs_repo, "docs/ok.md", "```bash run\ntrue\n```\n")
+    (docs_repo / "scratch.md").write_text("```bash run\nexit 1\n```\n")
+    assert main() == 0

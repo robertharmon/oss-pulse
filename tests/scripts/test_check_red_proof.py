@@ -1,3 +1,7 @@
+import subprocess
+import sys
+from pathlib import Path
+
 from scripts.check_red_proof import (
     changed_test_functions,
     evaluate_report,
@@ -160,3 +164,206 @@ def test_class_methods_match_by_class_and_name() -> None:
     )
     assert evaluate_report(report, ["tests/scripts/test_a.py::TestGroup::test_m"]) == []
     assert len(evaluate_report(report, ["tests/scripts/test_a.py::test_m"])) == 1
+
+
+# --- Audit additions (spec: module and function docstrings, ways of working §3.1)
+
+BASE_2 = """import pytest
+
+
+async def test_async_kept() -> None:
+    assert True
+
+
+async def test_async_edited() -> None:
+    assert 1 == 1
+
+
+def test_removed() -> None:
+    assert True
+
+
+class TestA:
+    def test_same(self) -> None:
+        assert True
+
+
+class TestB:
+    def test_same(self) -> None:
+        assert True
+"""
+
+HEAD_2 = """import pytest
+
+
+async def test_async_kept() -> None:
+    assert True
+
+
+async def test_async_edited() -> None:
+    assert 1 == 2
+
+
+async def test_async_new() -> None:
+    assert False
+
+
+class TestA:
+    def test_same(self) -> None:
+        assert True
+
+
+class TestB:
+    def test_same(self) -> None:
+        assert False
+"""
+
+
+def test_async_tests_and_same_named_methods_are_tracked_separately() -> None:
+    # The removed test isn't a target: there's nothing at head to prove red.
+    assert changed_test_functions(BASE_2, HEAD_2) == {
+        "test_async_edited",
+        "test_async_new",
+        "TestB::test_same",
+    }
+
+
+def test_a_changed_decorator_changes_the_test() -> None:
+    base = (
+        "import pytest\n\n\n"
+        '@pytest.mark.parametrize("x", [1, 2])\n'
+        "def test_p(x: int) -> None:\n"
+        "    assert x > 0\n"
+    )
+    head = base.replace("[1, 2]", "[1, 2, -1]")
+    assert changed_test_functions(base, head) == {"test_p"}
+
+
+def test_a_python_file_outside_the_test_paths_doesnt_start_the_red_phase() -> None:
+    commits = [
+        ("c1", "c0", ["scripts/test_helpers.py"]),
+        ("c2", "c1", ["ingest/tests/test_x.py"]),
+        ("c3", "c2", ["tests/ingest/test_x.py"]),
+    ]
+    assert find_stubs_commit(commits) == "c2"
+
+
+def test_a_test_name_doesnt_match_cases_of_a_longer_name() -> None:
+    report = _report(
+        _case("test_a"),
+        _case("test_a_extra", ASSERT),
+        _case("test_ab[1]", ASSERT),
+    )
+    problems = evaluate_report(report, ["tests/scripts/test_a.py::test_a"])
+    assert len(problems) == 1
+    assert "test_a" in problems[0]
+    report = _report(_case("test_ab", ASSERT))
+    assert len(evaluate_report(report, ["tests/scripts/test_a.py::test_a"])) == 1
+
+
+def test_a_same_named_test_in_another_file_doesnt_count() -> None:
+    report = _report(_case("test_x", ASSERT, classname="tests.scripts.test_b"))
+    problems = evaluate_report(report, ["tests/scripts/test_a.py::test_x"])
+    assert len(problems) == 1
+
+
+REAL_TESTS = """import pytest
+
+
+def test_assert():
+    assert 1 == 2
+
+
+def test_not_implemented():
+    raise NotImplementedError
+
+
+def test_did_not_raise():
+    with pytest.raises(ValueError):
+        pass
+
+
+@pytest.mark.parametrize("x", [1, 2])
+def test_all_cases_red(x):
+    assert x == 0
+
+
+class TestGroup:
+    def test_method(self):
+        assert False
+
+
+def test_other_exception():
+    raise KeyError("k")
+
+
+def test_passes():
+    pass
+
+
+@pytest.fixture
+def broken():
+    raise RuntimeError("setup")
+
+
+def test_setup_error(broken):
+    assert False
+
+
+@pytest.mark.parametrize("x", [1, 2])
+def test_one_case_green(x):
+    assert x == 1
+
+
+@pytest.mark.xfail(strict=True)
+def test_strict_xpass():
+    pass
+"""
+
+
+def test_reads_a_junit_report_that_pytest_really_wrote(tmp_path: Path) -> None:
+    # Real reports differ from hand-written ones: an assertion failure's message
+    # is "assert 1 == 2", with no "AssertionError" in it.
+    test_file = tmp_path / "tests" / "scripts" / "test_real.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text(REAL_TESTS)
+    (tmp_path / "pytest.ini").write_text("[pytest]\n")
+    report = tmp_path / "report.xml"
+    subprocess.run(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+            "-o",
+            "addopts=",
+            f"--rootdir={tmp_path}",
+            f"--junitxml={report}",
+            "tests/scripts/test_real.py",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+    )
+    prefix = "tests/scripts/test_real.py::"
+    red = [
+        "test_assert",
+        "test_not_implemented",
+        "test_did_not_raise",
+        "test_all_cases_red",
+        "TestGroup::test_method",
+    ]
+    not_red = [
+        "test_other_exception",
+        "test_passes",
+        "test_setup_error",
+        "test_one_case_green",
+        "test_strict_xpass",
+    ]
+    xml = report.read_text()
+    assert evaluate_report(xml, [prefix + name for name in red]) == []
+    problems = evaluate_report(xml, [prefix + name for name in not_red])
+    assert len(problems) == len(not_red)
+    for name, problem in zip(not_red, problems, strict=True):
+        assert name in problem

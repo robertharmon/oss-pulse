@@ -1,6 +1,12 @@
+import io
+import json
+import sys
+from collections.abc import Mapping
+from pathlib import Path
+
 import pytest
 
-from scripts.lock_paths_hook import decide
+from scripts.lock_paths_hook import decide, main
 
 ROOT = "/repo"
 
@@ -98,3 +104,134 @@ def test_session_started_with_agent_flag_is_still_the_builder() -> None:
     assert decide(
         "Write", {"file_path": f"{ROOT}/tests/x.py"}, "test-writer", False, ROOT
     )
+
+
+# --- Audit additions (spec: ADR 0002 §2, ways of working §1, module docstring) --
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "MultiEdit", "NotebookEdit"])
+def test_reviewer_writes_nothing_with_any_file_tool(tool: str) -> None:
+    assert _write("tests/ingest/test_hello.py", "reviewer", tool) is not None
+    assert _write("ingest/src/osp_ingest/hello.py", "reviewer", tool) is not None
+
+
+@pytest.mark.parametrize("tool", ["Edit", "MultiEdit", "NotebookEdit"])
+def test_test_writer_is_held_to_test_paths_with_every_file_tool(tool: str) -> None:
+    assert _write("tests/ingest/test_hello.py", "test-writer", tool) is None
+    assert _write("ingest/src/osp_ingest/hello.py", "test-writer", tool) is not None
+
+
+@pytest.mark.parametrize("who", ["general-purpose", "Explore", "claude", "anything"])
+def test_other_agents_can_write_non_test_paths(who: str) -> None:
+    assert _write("ingest/src/osp_ingest/hello.py", who) is None
+
+
+def test_lookalike_folders_are_not_the_locked_ones() -> None:
+    # Path rules match whole folder names, not string prefixes.
+    assert _write("testsuite/x.py", None) is None
+    assert _write("tests/adversarial_extra/test_x.py", "red-team") is not None
+    who = "spec-reconstructor"
+    assert _write("build/spec_reconstruction_old/x.yml", who) is not None
+    nested_docs = {"file_path": f"{ROOT}/dbt/models/docs/overview.md"}
+    assert decide("Read", nested_docs, who, True, ROOT) is None
+
+
+def test_dot_dot_segments_cant_dodge_the_rules() -> None:
+    assert _write("ingest/../tests/test_x.py", None) is not None
+    who = "spec-reconstructor"
+    assert _write("build/spec_reconstruction/../../docs/x.md", who) is not None
+    sneaky = {"file_path": f"{ROOT}/dbt/../docs/data_contract.md"}
+    assert decide("Read", sneaky, who, True, ROOT) is not None
+
+
+def test_spec_reconstructor_cant_search_docs_by_folder_or_whole_repo() -> None:
+    who = "spec-reconstructor"
+
+    def call(tool: str, tool_input: dict[str, str]) -> str | None:
+        return decide(tool, tool_input, who, True, ROOT)
+
+    assert call("Glob", {"pattern": "*.md", "path": f"{ROOT}/docs"}) is not None
+    assert call("Glob", {"pattern": "*.md", "path": f"{ROOT}/documentation"})
+    # Grep with no path, or the project root, searches docs/ along with the rest,
+    # and returns the contract's lines.
+    assert call("Grep", {"pattern": "grain"}) is not None
+    assert call("Grep", {"pattern": "grain", "path": ROOT}) is not None
+    assert call("Grep", {"pattern": "grain", "path": f"{ROOT}/dbt"}) is None
+
+
+def test_spec_reconstructor_cant_read_docs_by_windows_path() -> None:
+    tool_input = {"file_path": "C:\repo\\docs\\data_contract.md"}
+    assert decide("Read", tool_input, "spec-reconstructor", True, "C:\repo")
+
+
+def test_bash_is_not_parsed() -> None:
+    tool_input = {"command": "echo x > tests/test_x.py"}
+    assert decide("Bash", tool_input, None, False, ROOT) is None
+
+
+def _run_main(
+    payload: Mapping[str, object],
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> tuple[int, str]:
+    # The hook runs with the project as cwd and CLAUDE_PROJECT_DIR set
+    # (.claude/settings.json), and the input carries cwd too.
+    monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(project))
+    monkeypatch.chdir(project)
+    data = json.dumps({"cwd": str(project), **payload}).encode()
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(data)))
+    code = main()
+    return code, capsys.readouterr().out
+
+
+def test_main_denies_with_a_pretooluse_decision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "tests" / "test_x.py")},
+    }
+    code, out = _run_main(payload, tmp_path, monkeypatch, capsys)
+    assert code == 0  # Claude Code reads the JSON decision only on exit 0
+    decision = json.loads(out)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "deny"
+    assert decision["permissionDecisionReason"]
+
+
+def test_main_lets_a_subagent_test_writer_through_silently(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "tests" / "test_x.py")},
+        "agent_id": "a1b2c3",
+        "agent_type": "test-writer",
+    }
+    code, out = _run_main(payload, tmp_path, monkeypatch, capsys)
+    assert code == 0
+    assert out.strip() == ""
+
+
+def test_main_treats_agent_type_without_agent_id_as_the_builder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Module docstring: `agent_id` is present only for subagents. A main session
+    # started with --agent test-writer carries agent_type but no agent_id.
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "tests" / "test_x.py")},
+        "agent_type": "test-writer",
+    }
+    code, out = _run_main(payload, tmp_path, monkeypatch, capsys)
+    assert code == 0
+    assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
