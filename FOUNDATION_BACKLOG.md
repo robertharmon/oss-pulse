@@ -149,30 +149,30 @@ The dressed-but-empty repo. Every tool and gate that will protect subsequent
 code lands here, even when there's no code to protect yet. "Walking
 skeleton": all guardrails on, no content.
 
-- [ ] **B1. Folder skeleton** — top-level directories (`ingest/`, `dbt/`,
+- [x] **B1. Folder skeleton** — top-level directories (`ingest/`, `dbt/`,
   `dashboard/`, `terraform/`, `tests/`, `docs/`, `.github/`) with one-line
   READMEs explaining what belongs in each. Done when: a stranger knows where
   any file type goes without asking.
 
-- [ ] **B2. `.gitignore`** — Python, Terraform state, dbt artifacts, secrets,
+- [x] **B2. `.gitignore`** — Python, Terraform state, dbt artifacts, secrets,
   notebook checkpoints, OS cruft. Done when: committed; nothing in those
   categories can be accidentally staged.
 
-- [ ] **B3. Python toolchain** — `pyproject.toml`, `uv` as package manager,
+- [x] **B3. Python toolchain** — `pyproject.toml`, `uv` as package manager,
   `ruff` (lint + format), `mypy` strict, `pytest` + `pytest-cov`. Done when:
   `uv run ruff check .`, `uv run mypy .`, and `uv run pytest` all pass on
   a dummy module.
 
-- [ ] **B4. SQL toolchain** — `sqlfluff` with the BigQuery dialect, config in
+- [x] **B4. SQL toolchain** — `sqlfluff` with the BigQuery dialect, config in
   `.sqlfluff`. Done when: `sqlfluff lint` runs cleanly against a trivial
   `.sql` file.
 
-- [ ] **B5. Pre-commit hooks** — `.pre-commit-config.yaml` running ruff,
+- [x] **B5. Pre-commit hooks** — `.pre-commit-config.yaml` running ruff,
   mypy, sqlfluff, and `gitleaks` on changed files. Done when:
   `pre-commit install` wired, a staged test commit catches a planted bad
   file.
 
-- [ ] **B6. CI workflow stubs** — `.github/workflows/ci.yml` with stub jobs
+- [x] **B6. CI workflow stubs** — `.github/workflows/ci.yml` with stub jobs
   for lint-python, typecheck, lint-sql, test-python, terraform-fmt,
   terraform-validate, and secret-scan. Each passes trivially on an empty
   repo. Done when: a dummy PR shows all seven jobs green.
@@ -185,11 +185,11 @@ skeleton": all guardrails on, no content.
   set requires PR, blocks force pushes, restricts deletions. Status-check
   requirements will be added once CI jobs exist (B6)._
 
-- [ ] **B8. PR template** — `.github/pull_request_template.md` with what
+- [x] **B8. PR template** — `.github/pull_request_template.md` with what
   changed, why, how tested, breaking changes, rollback plan. Done when: PRs
   auto-populate.
 
-- [ ] **B9. CODEOWNERS** — even if just you, the right habit. Done when:
+- [x] **B9. CODEOWNERS** — even if just you, the right habit. Done when:
   committed.
 
 - [x] **B10. ADR template** — `docs/adr/0000-template.md` for future ADRs.
@@ -274,7 +274,7 @@ phase, the cloud account mirrors what the operating docs promise.
 One PR that touches every surface the project will use for the next 4
 months. Any surface misconfigured gets caught here, with nothing at stake.
 
-- [ ] **D1. Hello-world Python module** — `ingest/hello.py` with a trivial
+- [x] **D1. Hello-world Python module** — `ingest/hello.py` with a trivial
   function and a passing unit test. Done when: lint, typecheck, and test
   pass in CI.
 
@@ -285,7 +285,7 @@ months. Any surface misconfigured gets caught here, with nothing at stake.
   bucket, opened as a PR. Done when: the PR shows a `terraform plan` diff,
   passes CI, and applies on merge.
 
-- [ ] **D4. Deliberate CI failure drill** — one PR that intentionally
+- [x] **D4. Deliberate CI failure drill** — one PR that intentionally
   breaks a lint rule to confirm the gate rejects it. Done when: CI goes red
   on that PR, green after the fix.
 
@@ -324,3 +324,4 @@ The foundation phase is complete. oss-pulse moves from "scaffolding only" to
 | 2026-11-18 | A11 (cost model) closed; its four decisions approved. A10 input on storage retention replaced by "apply A11 decisions to architecture.md". |
 | 2026-11-18 | A12 (security posture) closed. |
 | 2026-11-18 | A10 (roadmap, `docs/roadmap.md`) and A13 (ways of working) closed, both approved by the author. Phase A is complete. |
+| 2026-11-18 | B1–B6, B8, B9 closed (PRs #27–#29, #32–#34, #36), each with a planted-bad-input drill; D1 (walking-skeleton module passes lint, type check and tests in CI) and D4 (CI red on a planted lint error, then green; PR #35, closed unmerged) closed. |
