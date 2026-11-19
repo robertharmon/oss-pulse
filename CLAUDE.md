@@ -44,26 +44,31 @@ authoritative source if the two ever drift.
    tracker. Phases A (foundation docs), B (repo scaffolding), C (cloud
    bootstrap), D (walking-skeleton smoke test). Pick the next unchecked
    item and work it.
-2. **`OPEN_LOOPS.md`** — small ad-hoc chores that aren't on the phased
+2. **`docs/roadmap.md`** — milestones M1–M7 to v1, with done criteria.
+   The tracker for everything not in the foundation backlog, and the only
+   tracker once the backlog is empty.
+3. **`docs/ways_of_working.md`** — roles, the per-PR definition of done
+   (test-first loop), when to ask the author, scope creep, stop rules.
+4. **`OPEN_LOOPS.md`** — small ad-hoc chores that aren't on the phased
    plan. Scan at the start of a session for cheap pickups.
-3. **`QUESTIONS.md`** — open questions waiting on the author. Check for
+5. **`QUESTIONS.md`** — open questions waiting on the author. Check for
    new answers before starting work.
-4. **`DECISIONS.md`** — locked operating decisions (GCP account,
+6. **`DECISIONS.md`** — locked operating decisions (GCP account,
    region, environments, naming, secrets, error handling, resource
    management, testing, branching, runtime/packaging, scope). Consult
    *before* suggesting anything that touches these.
-5. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
+7. **`CONVENTIONS.md`** — code and docs conventions (naming, Python
    style, SQL style, PR titles, when to write comments). Points at
    DECISIONS.md for anything already locked there.
 
 ### Reference context (what the project is and how it fits together)
 
-6. **`README.md`** — one-pager repo intro: what oss-pulse is, what
+8. **`README.md`** — one-pager repo intro: what oss-pulse is, what
    questions it answers, current status, repo map.
-7. **`docs/architecture.md`** — target system architecture: ASCII
+9. **`docs/architecture.md`** — target system architecture: ASCII
    diagram, per-component responsibilities, end-to-end trace of one
    record, failure-boundary matrix, security-boundary summary.
-8. **Every ADR in `docs/adr/`** — architectural rationale. Read them
+10. **Every ADR in `docs/adr/`** — architectural rationale. Read them
    all, not just "the relevant one." `0001-tech-stack.md` is the stack
    foundation; later ADRs record subsequent decisions.
 

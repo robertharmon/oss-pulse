@@ -182,6 +182,47 @@ hold.
 - `gcloud billing projects describe oss-pulse-dev-<yyyy>` fails with a
   permission error.
 
+### 2.5 CI's dev identity (Cloud Shell)
+GitHub Actions needs its own way into dev BigQuery for the dbt and dry-run
+checks (access matrix §2, §4.1). It uses Workload Identity Federation, so
+there's no key.
+```
+PROJECT=oss-pulse-dev-<yyyy>
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+gcloud services enable iam.googleapis.com sts.googleapis.com --project=$PROJECT
+
+gcloud iam service-accounts create osp-ci-dev --project=$PROJECT \
+  --display-name="oss-pulse CI (dev only)"
+CI_SA=osp-ci-dev@$PROJECT.iam.gserviceaccount.com
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=serviceAccount:$CI_SA --role=roles/bigquery.dataEditor
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=serviceAccount:$CI_SA --role=roles/bigquery.jobUser
+
+# Trust GitHub's tokens, but only from this repository (by numeric ID),
+# and never from pull_request_target.
+gcloud iam workload-identity-pools create github --project=$PROJECT \
+  --location=global --display-name="GitHub Actions"
+gcloud iam workload-identity-pools providers create-oidc github-oidc \
+  --project=$PROJECT --location=global --workload-identity-pool=github \
+  --issuer-uri=https://token.actions.githubusercontent.com \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id" \
+  --attribute-condition="assertion.repository_id == '1406578436' && assertion.event_name != 'pull_request_target'"
+
+gcloud iam service-accounts add-iam-policy-binding $CI_SA --project=$PROJECT \
+  --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository_id/1406578436"
+```
+- Dev maps only `repository_id`. The `gh_env` mapping is for prod's
+  Environment-gated identities (Part 3).
+- Then add two **repository variables** (not secrets) in GitHub:
+  `GCP_DEV_WIF_PROVIDER` =
+  `projects/<number>/locations/global/workloadIdentityPools/github/providers/github-oidc`,
+  and `GCP_DEV_CI_SA` = the `osp-ci-dev` email.
+
+**Done when:** a workflow on a test branch authenticates with
+`google-github-actions/auth` and runs `select 1` in dev.
+
 ---
 
 ## Part 3 — Prod project (at cutover)

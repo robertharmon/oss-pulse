@@ -75,7 +75,7 @@ or cloud resources so every subsequent choice has something to check against.
   grows with every real incident. Done when: committed and ready to accept
   entries.
 
-- [ ] **A10. 90-day roadmap** — `docs/roadmap.md`. Milestones for months 1,
+- [~] **A10. 90-day roadmap** — `docs/roadmap.md`. Milestones for months 1,
   2, 3 with measurable "done" criteria for each. Done when: committed and
   reviewed; serves as the content-phase sequencer after foundation ends.
 
@@ -127,7 +127,7 @@ or cloud resources so every subsequent choice has something to check against.
   audit logging posture, incident disclosure path. Done when: committed, and
   informs the Secret Manager + IAM wiring in Phase C.
 
-- [ ] **A13. Solo-project ways-of-working** — `docs/ways_of_working.md`.
+- [~] **A13. Solo-project ways-of-working** — `docs/ways_of_working.md`.
   The solo analog of a team's engineering agreements: session cadence,
   self-review discipline, when to interrupt a session vs. ship-and-move-on,
   what "done" means for a solo PR. Done when: committed; subsequent sessions

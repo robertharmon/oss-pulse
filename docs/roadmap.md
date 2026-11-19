@@ -1,13 +1,14 @@
 # oss-pulse — Roadmap
 
 > From here to a finished v1: seven milestones, what each one delivers,
-> how we know it's done, and what each needs from the author. Covers the
-> rest of the foundation backlog and the build that follows it.
+> how we know it's done, and what each needs from the author.
 >
-> **Status:** proposed 2026-11-18 for the author's approval (backlog A10).
-> Until `FOUNDATION_BACKLOG.md` is empty, the backlog is the tracker for
-> its own items and this doc sequences them. After that, this doc is the
-> only tracker.
+> **Status:** backlog A10. The decisions in §4 were approved 2026-11-18;
+> the document as a whole awaits the author's sign-off. **This is a
+> tracker:** each item carries a status marker
+> (`[ ]` open, `[~]` in progress, `[x]` done, `[-]` skipped). Items that
+> came from `FOUNDATION_BACKLOG.md` keep their IDs (A–D) and are ticked in
+> both places until the backlog is archived.
 >
 > How the work is done is in [`ways_of_working.md`](ways_of_working.md);
 > the operating model is [ADR 0002](adr/0002-agentic-build-out-and-isolated-dev.md).
@@ -19,178 +20,309 @@
 ### 1.1 v1 is done when
 
 1. **All four charts are live** on Streamlit Community Cloud, reading
-   prod marts built from real data, with at least 30 days of history.
-2. **Prod has run 14 days in a row with no manual fixes.** Planned
-   replays and drills don't count against this.
-3. **A full month's bill is $0.00–0.50,** in line with
-   [`cost_model.md`](cost_model.md).
-4. **Every gate is green on `main`,** and every failure mode in the
+   prod marts that cover at least 30 days of events. (The history comes
+   from a backfill run during the cutover, before the clock in point 2
+   starts.)
+2. **Prod has run 14 days in a row with no manual intervention.** Any
+   unplanned replay, re-run or fix counts as intervention. Only scheduled
+   drills don't.
+3. **One full calendar month's invoice is $0.00–0.50** for both projects
+   together, in line with [`cost_model.md`](cost_model.md).
+4. **Every gate is green on `main`,** and every failure-mode ID in the
    contract has a test.
 5. **The runbook has been exercised:** at least the D5 drill entry, plus
    any real incidents.
-6. **A stranger can follow the README** to understand the project, see
-   the dashboard, and find how each part was built and checked.
+6. **The README works for a stranger.** A reviewer subagent given only the
+   README can answer five set questions: what the project does, which
+   questions it answers, where the live dashboard is, how data gets from
+   GH Archive to a chart, and how correctness is checked.
 
-After v1, the project is in maintenance: scheduled reviews (§5), fixes
-through normal PRs, and optional extras (§6).
+So v1 lands at the end of the first full calendar month after the cutover.
+After that, the project is in maintenance: scheduled reviews (§5), fixes
+through PRs into `main`, and optional extras (§6).
 
 ### 1.2 When `build/agentic` merges into `main`
 
 `main` stays frozen at `baseline-pre-agentic` until the build is done
 (ADR 0002 §4). Prod, though, can only be deployed from `main`: the
 `prod-apply` and `prod-deploy` GitHub Environments only accept `main`
-(access matrix §2). So **the merge has to come before the cutover, not
-after it:**
+(access matrix §2). So **the merge comes before the cutover**, as the
+author confirmed on 2026-11-18:
 
-1. The build is **code-complete and verified in dev** (end of milestone 7).
-2. The author reviews the whole range and merges `build/agentic` into
+1. The build is **code-complete, and verified as far as dev allows** (end
+   of M7). Dev has no Cloud Run, Scheduler, Secret Manager or alerting
+   (access matrix §3), so those parts are verified only by `terraform
+   validate`, mock-provider tests and review until the cutover. §2 marks
+   each done-when that moves to the cutover.
+2. **The GitHub Environments exist first.** The author creates
+   `prod-plan`, `prod-apply` and `prod-deploy` with their protection rules
+   (author_setup Part 3) **before** the merge. Otherwise the first workflow
+   that names them would create them unprotected.
+3. The author reviews the whole range and merges `build/agentic` into
    `main` with "Rebase and merge".
-3. The author runs the cutover from `main`
-   (`docs/cutover_runbook.md`).
-4. `build/agentic` is retired. From then on, fixes are normal PRs into
-   `main` (DECISIONS §3, §9).
+4. The author runs the cutover from `main` (`docs/cutover_runbook.md`).
+5. `build/agentic` is retired. From then on, every change is a PR into
+   `main` (ways of working §4.1).
 
-If the cutover goes badly, `main` can be reset to the baseline tag, and
-prod has nothing in it yet worth keeping.
+**If the cutover goes badly,** the fix is a revert PR, never a reset:
+force-pushing `main` is forbidden (DECISIONS §9) and blocked by
+`protect-main`. Prod holds nothing yet that can't be torn down and
+re-applied.
 
 ## 2. Milestones
 
 Each milestone ends with an `m<N>-done` tag and the author's review
-(ways of working §4). Backlog IDs (A–D) are kept where an item came from
-the foundation backlog.
+(ways of working §4).
+
+**Approval load.** CODEOWNERS covers test fixtures and expected outputs,
+dbt `schema.yml` files, tool configs and `terraform/**` (ADR 0002 §3).
+So most PRs in M2–M5 need the author's approval, not only the milestone
+start. The builder batches them (ways of working §2.2); how fast the
+author clears that batch sets the pace of those milestones.
 
 ### M1 — Foundation docs
 
-Finish writing down what the build is checked against.
+- [x] **A11** cost model, with its decisions applied to the contract,
+  access matrix and runbook.
+- [x] **A12** security posture (`docs/security.md`).
+- [~] **A10** roadmap (this doc) and **A13** ways of working. Done when:
+  author approved and merged; `CLAUDE.md` points at both.
+- [ ] **`architecture.md` drift fix.** Done when it matches the current
+  decisions:
+  - daily dbt from its own Scheduler job; ingest doesn't invoke dbt;
+  - retention instead of "keep forever";
+  - no Docker or Artifact-Registry-push story (DECISIONS §10);
+  - measured file sizes, no `PushEvent`, retries on the Scheduler job;
+  - the access matrix's corrections to §7;
+  - pointers to the data contract, access matrix, runbook, cost model and
+    security doc, which all exist now;
+  - `raw_ingest_audit` in the diagram;
+  - the dashboard key in Streamlit secrets, not Secret Manager.
 
-| Item | Done when |
-|---|---|
-| A10 roadmap (this doc), A13 ways of working | Author approved; merged |
-| `architecture.md` drift fix | Matches the current decisions: daily dbt via its own Scheduler job, retention instead of "keep forever", no Docker/Artifact-Registry-push story (DECISIONS §10), measured file sizes, no `PushEvent`, retries on the Scheduler job, access corrections from the access matrix, dbt as a Cloud Run service |
-| Contract additions | Contract §3.3 failure modes get IDs (`FM-01`…); `raw_ingest_audit` has an entry; reconciliation counts and metamorphic relations are listed as testable statements. Author approved. |
-| Backlog housekeeping | The end-of-backlog step that copies this doc to a second `ROADMAP.md` is removed (one roadmap, here) |
+  It **doesn't** decide whether dbt runs as a Cloud Run service or job:
+  the ingest ADR does.
+- [ ] **Contract additions.** Done when:
+  - contract §3.3 failure modes have IDs (`FM-01`…) and §3.3's "Cloud Run
+    auto-retries 3×" is corrected (retries live on the Scheduler job);
+  - `raw_ingest_audit` has an entry;
+  - the reconciliation counts and metamorphic relations are listed as
+    testable statements;
+  - the author has approved them.
+- [x] Backlog housekeeping: no second `ROADMAP.md` copy.
 
 **Needs the author:** approvals only.
 
 ### M2 — Scaffolding, verifier tooling, and a working dev project
 
-Every gate and check exists before there's code for them to protect.
+**Order matters here:** author setup Part 1 → Part 2 (including CI's dev
+identity) → kill switch live → anything that queries dev BigQuery.
 
-| Item | Done when |
-|---|---|
-| B1–B6, B8, B9 | Folder skeleton, `.gitignore`, Python and SQL toolchains, pre-commit, CI jobs, PR template, CODEOWNERS. Each passes on a trivial input and rejects a planted bad one. |
-| B11 verifier tooling | Red-proof check, tests-untouched check, failure-mode coverage script, executable-docs runner, `dbt build --empty` job, contract ↔ `schema.yml` and access matrix ↔ Terraform diffs, retention and `full_refresh` checks (cost model §7), subagent definitions, lock hook. **Each one rejects a planted bad input in a drill PR.** |
-| Author setup, Part 1 and Part 2 | Branch rules (§1.1), bot accounts (§1.2–1.3), repo security settings (§1.4), dev project, quota, bucket and agent identity (§2.1–2.2, backlog C1/C2/C10 for dev) |
-| C9 kill switch, dev | Agent writes the function and deploy script; author deploys it and runs the drill. **Live before any agent BigQuery work in dev.** |
-| Dev spike | Measures the open items in cost model §9 (physical vs logical storage, `--empty` billing, JSON column billing, Zstandard Parquet loads, `REQUIRED` vs nullable pyarrow schema, ingest runtime, image sizes) and confirms `insert_overwrite` incremental models run. Results go into the cost model. |
-| D1, D2, D4 | Hello-world Python module and dbt model pass CI against dev; a deliberate lint failure turns CI red, then green. |
+- [ ] **Author setup Part 1:** branch rules, bot accounts, repo security
+  settings, `ci-alerts` environment (author_setup §1.1–1.4).
+- [ ] **Author setup Part 2:** dev project, quota, bucket, agent identity
+  (C1/C2/C10 for dev), and **CI's dev identity and WIF pool** (§2.5).
+- [ ] **C9 kill switch, dev.** The agent writes the function and deploy
+  script; the author deploys it and runs the drill. **Live before any
+  agent BigQuery work in dev.**
+- [ ] **B1–B6, B8, B9:** folder skeleton, `.gitignore`, Python and SQL
+  toolchains, pre-commit (hooks pinned by SHA), CI jobs (actions pinned by
+  SHA), PR template, CODEOWNERS.
+- [ ] **B11 verifier tooling.** The checks:
+  - red proof against the stubs commit, assertion failures only;
+  - no mixed test/non-test commits;
+  - failure-mode coverage;
+  - executable docs;
+  - `dbt build --empty`;
+  - contract ↔ `schema.yml` and access matrix ↔ Terraform diffs;
+  - retention, soft-delete, cleanup-policy and `full_refresh: false`
+    checks (cost model §7);
+  - dev datasets without the 7-day expiration (ADR 0002 §1);
+  - workflows using `pull_request_target` (access matrix §6);
+  - subagent definitions and the lock hook.
 
-**Needs the author:** `docs/author_setup.md` Parts 1–2, deploying the
-dev kill switch, and approving the check-defining files (CODEOWNERS).
+  **Done when, for each check:** a drill PR plants a bad input, the check
+  goes red, **the check is a required status check** in the
+  `build/agentic` ruleset, and the bot's attempt to merge the drill PR is
+  refused.
+- [ ] **Author: make each check required** in the `protect-build-agentic`
+  ruleset as it lands, and add the `.claude/settings.json` deny rules
+  from ADR 0002 §2 (agents never edit that file).
+- [ ] **Dev spike.** Done when the cost model §9 items that dev can
+  measure are measured and written into the cost model:
+  - physical vs logical storage, including time travel;
+  - what `--empty` and JSON-column reads bill;
+  - Zstandard Parquet loads;
+  - `REQUIRED` vs nullable pyarrow schema;
+  - `insert_overwrite` incremental models.
+
+  (Ingest runtime is measured in M3; Cloud Run runtime and image sizes at
+  the cutover.)
+- [ ] **D1, D2, D4:** a hello-world Python module and dbt model pass CI
+  against dev; a deliberate lint failure turns CI red, then green.
+
+**Needs the author:** Parts 1–2, deploying the dev kill switch, making
+checks required, the settings deny rules, and CODEOWNERS approvals.
 **This is the milestone most likely to wait on the author's time.**
 
 ### M3 — Ingest
 
-| Item | Done when |
-|---|---|
-| Ingest ADR | Decides the Scheduler minute (files went live at `:05:03`–`:05:04` on every hour sampled, so `:05` has no margin; `:15` is the first candidate), the backfill window and its separate path (cost model §5.3), the hour-retry rule, and that ingest writes only with load jobs. Author approved. |
-| `s1_gharchive_hour_to_gcs_parquet`, `s2_gharchive_gcs_parquet_to_bq_raw` | Built test-first. Padded ↔ unpadded hour conversion tested for hours 0–9; Zstandard Parquet; `REQUIRED` schema; `WRITE_TRUNCATE` on the hour; reload-the-same-hour leaves the table unchanged |
-| `raw_ingest_audit` and the missing-hour rule | First and second 404 log `WARNING`, the third logs `ERROR` (RUNBOOK §3.2); line count = rows loaded, from load-job statistics |
-| Raw-layer data quality | Per the decision in §4.1 |
-| Red-team round | Ends after 3 failed break attempts in a row |
+- [ ] **Ingest ADR.** Done when the author has approved it. It decides:
+  - the Scheduler minute: files went live at `:05:03`–`:05:04` on every
+    hour sampled, so `:05` has no margin, and `:15` is the first
+    candidate;
+  - the backfill window and its separate path (cost model §5.3), sized
+    so the cutover backfill gives the 30 days v1 needs;
+  - the hour-retry rule, and that ingest writes only with load jobs;
+  - whether dbt runs as a Cloud Run service or job.
+- [ ] **`s1_gharchive_hour_to_gcs_parquet`,
+  `s2_gharchive_gcs_parquet_to_bq_raw`.** Built test-first. Done when:
+  - padded ↔ unpadded hour conversion is tested for hours 0–9;
+  - Parquet is Zstandard, and the schema is `REQUIRED` where the contract
+    says so;
+  - an hour is written with `WRITE_TRUNCATE`, and reloading the same hour
+    leaves the table unchanged;
+  - load and query jobs carry the `component` label (cost model §10);
+  - the local runtime and memory for one hour are recorded.
+- [ ] **Great Expectations, in ingest** (§4.1). The suite *is* ingest's
+  batch validation: one implementation, not a second copy of the same
+  rules. Each expectation maps to a failure-mode ID.
+- [ ] **`raw_ingest_audit` and the missing-hour rule.** The first and
+  second 404s log `WARNING`, the third logs `ERROR` (RUNBOOK §3.2). Line
+  count = rows loaded, from load-job statistics.
+- [ ] **Red-team round** (ways of working §4).
 
-**Needs the author:** approving the ADR and the hand-computed expected
-outputs at milestone start.
+**Needs the author:** the ADR, expected outputs, CODEOWNERS approvals.
 
 ### M4 — dbt models
 
-| Item | Done when |
-|---|---|
-| Staging, core and dimension models | Built test-first with hand-computed `unit_tests`; `insert_overwrite`; `contract: enforced`; retention and `full_refresh: false` as in contract §1 |
-| Language source | Per the decision in §4.2 |
-| Four marts | Each matches its contract entry, checked by spec reconstruction; snapshot marts partitioned on `as_of_date` |
-| Reconciliation and metamorphic tests | Every count in the contract balances in a dbt test that also runs in prod; reload, time-shift, actor-shuffle and equal-activity relations hold |
-| Red-team round | As M3 |
+- [ ] **Staging, core and dimension models.** Built test-first with
+  hand-computed unit tests. Done when they use `insert_overwrite` and
+  `contract: enforced`, follow contract §1's retention and
+  `full_refresh: false`, apply `actor_suppressions`, and label their jobs
+  (cost model §10).
+- [ ] **Language lookup** (§4.2). An ADR first, then the build.
+- [ ] **Four marts.** Each matches its contract entry, checked by the
+  spec-reconstructor's structured diff. Snapshot marts are partitioned on
+  `as_of_date` and carry `repo_name`.
+- [ ] **Reconciliation and metamorphic tests.** Every count in the
+  contract balances in a dbt test that also runs in prod. The reload,
+  time-shift, actor-shuffle and equal-activity relations hold.
+- [ ] **Red-team round.**
 
-**Needs the author:** approving expected outputs at milestone start.
+**Needs the author:** expected outputs, the language ADR, CODEOWNERS
+approvals.
 
 ### M5 — Terraform
 
-| Item | Done when |
-|---|---|
-| C3–C5 | State bucket design, module layout, and every prod resource in code: buckets with lifecycle and soft delete off, datasets with expiration, service accounts and grants exactly as the access matrix says, empty secret shells, Cloud Run services, two Scheduler jobs, the alert policy, the Artifact Registry repo with its cleanup policy, labels (cost model §10) |
-| Tests | `terraform test` with mock providers; the access-matrix diff is green; `terraform validate` and `fmt` in CI |
-| C6 Terraform CI | Plan on PRs; apply only from `prod-apply` (it first runs for real at cutover) |
+- [ ] **C3–C5 in code.** Every prod resource:
+  - buckets with lifecycle rules and soft delete off;
+  - datasets with expiration;
+  - service accounts and grants exactly as the access matrix says;
+  - empty secret shells;
+  - Cloud Run services, two Scheduler jobs (plus the language lookup if
+    its ADR needs one), the alert policy;
+  - the Artifact Registry repo with its cleanup policy;
+  - labels (cost model §10).
 
-**Needs the author:** approving the Terraform (it's CODEOWNERS-protected).
+  Done when `terraform test` (mock providers), `validate`, `fmt` and the
+  access-matrix diff are green. **Moves to the cutover:** C3's
+  `terraform init` against the state bucket, and C5's "apply from a clean
+  clone".
+- [ ] **C6 Terraform CI.** Before the merge: `fmt`, `validate` and
+  `terraform test` on every PR. `plan` and `apply` against prod need prod
+  to exist, so **they first run at the cutover**, through `prod-plan` and
+  `prod-apply`.
+
+**Needs the author:** CODEOWNERS approvals (all of `terraform/**`).
 
 ### M6 — Dashboard
 
-| Item | Done when |
-|---|---|
-| `dashboard/app.py` | Four charts, each loading its mart once and caching (contract §6.1); "data unavailable" instead of a stack trace; tested with Streamlit `AppTest` |
-| Query checks | Every dashboard query dry-runs against dev BigQuery in CI; none uses `CURRENT_DATE()` |
+- [ ] **`dashboard/app.py`.** Done when:
+  - four charts each load their mart once and cache it (contract §6.1);
+  - a missing mart shows "data unavailable" instead of a stack trace;
+  - the app is tested with Streamlit `AppTest` against fixtures.
+- [ ] **Query checks.** Every dashboard query dry-runs against dev
+  BigQuery in CI, and none uses `CURRENT_DATE()`.
 
-**Needs the author:** nothing until cutover (the Streamlit app and its key
-are created then).
+**Needs the author:** nothing until the cutover, when the Streamlit app
+and its key are created.
 
 ### M7 — Deploy, operations, cutover
 
-| Item | Done when |
-|---|---|
-| Deploy workflow | Deploys both services from `main` through `prod-deploy` with `--source` (DECISIONS §10) |
-| Alerting | Prod log-based alert policy to the hand-made Slack channel; C7 secrets wired; C8 CI → Slack proven |
-| Cutover runbook and smoke test | `docs/cutover_runbook.md` with staged steps (Terraform → one manual ingest → dbt → schedule → alerts → dashboard); its commands pass the executable-docs syntax check |
-| Docs polish | README rewritten for a portfolio reader; `architecture.md` §4 trace updated with real numbers |
-| Final red-team round | Across the whole pipeline |
-| **Merge and cutover** (§1.2) | Author merges into `main`, creates prod (author_setup Part 3), and runs the cutover with the agent reading output. D3 and D5 happen here. |
-| v1 | The §1.1 criteria hold |
+- [ ] **Deploy workflow.** Deploys both services from `main` through
+  `prod-deploy`, with `--source` (DECISIONS §10). First runs at the
+  cutover.
+- [ ] **Alerting.** The prod log-based alert policy to the hand-made Slack
+  channel (C7, C8). CI → Slack can be proven before the merge through
+  `ci-alerts`; prod alerting at the cutover.
+- [ ] **Cutover runbook and smoke test.** `docs/cutover_runbook.md` with
+  staged steps: Environments check → Terraform → one manual ingest →
+  backfill → dbt → schedule → alerts → dashboard. Includes C10's check
+  that the bot gets 403 on every prod resource, and that the Compute
+  Engine default account doesn't hold `editor`. Its commands pass the
+  executable-docs syntax check.
+- [ ] **Docs polish.** The README rewritten for a portfolio reader (v1
+  point 6); the `architecture.md` §4 trace updated with real numbers.
+- [ ] **Final red-team round** across the whole pipeline.
+- [ ] **Merge and cutover** (§1.2), done by the author. D3 and D5 happen
+  here.
+- [ ] **v1** (§1.1).
 
 ## 3. Schedule
 
-Targets, not promises. The author's setup time gates M2 and M7; the rest
-is agent work that can move quickly once its gates exist.
+Targets, not promises. The author's setup and approval time gates M2–M5
+and the cutover. The rest is agent work that moves quickly once its gates
+exist.
 
 | Window | Milestones | Gate |
 |---|---|---|
-| By 2026-12-18 | M1 done; M2 well underway | Author setup Part 1 and Part 2 |
-| By 2027-01-17 | M2, M3, M4 | Author approves expected outputs |
+| By 2026-12-18 | M1 done; M2 well underway | Author setup Parts 1–2 |
+| By 2027-01-17 | M2, M3, M4 | Expected outputs and CODEOWNERS approvals |
 | By 2027-02-16 | M5, M6, M7 code-complete; merge and cutover | Author's cutover session |
-| +14 days after cutover | v1 | Prod runs clean |
+| End of the first full calendar month after the cutover (≈ 2027-03-31) | v1 | Prod runs clean; the month's invoice |
 
 If a window slips, the order doesn't change: no ingest code before M2's
-gates exist, and no cutover before every gate is green.
+gates are required checks, and no cutover before every gate is green.
 
-## 4. Decisions this roadmap needs
+## 4. Decisions (approved 2026-11-18)
 
-### 4.1 Raw-layer data quality: Great Expectations or not?
+### 4.1 Raw-layer data quality: keep Great Expectations, in ingest
 
-ADR 0001 and the README promise Great Expectations on the raw layer.
-Since then, the contract has moved most raw checks into ingest's own
-fail-fast assertions and the `REQUIRED` schema.
+- **Decision:** a Great Expectations suite validates each hour's batch in
+  memory, before it's loaded.
+- **It's the only implementation** of those rules. Ingest's own
+  "assertions" are the suite, not a second copy, so failure-mode coverage
+  maps each rule to one place.
+- **Why keep it:** ADR 0001 and the README promise it, and it's a widely
+  listed tool, which matters for a portfolio project. Honestly, the same
+  rules would also work as plain Python checks.
+- **Costs:** no BigQuery cost; a heavier ingest image (a few cents of
+  Artifact Registry at most); more memory for the conversion, measured in
+  M3.
+- **Not chosen:** dropping it (simpler); running it only in CI against
+  fixtures (cheaper, but wouldn't check live data).
 
-- **(a) Recommended: keep Great Expectations, in ingest, on the in-memory
-  batch** before it's loaded. A small suite mirroring contract §4.1
-  (types, accepted values, row counts, timestamp window). No BigQuery
-  cost. Keeps ADR 0001's promise, and adds a commonly listed tool to the
-  portfolio. Cost: a heavy dependency (bigger ingest image, a few cents of
-  Artifact Registry storage at most).
-- **(b) Drop it,** and amend ADR 0001 and the README. Ingest assertions plus
-  dbt tests already cover the same rules. Simpler and smaller.
+### 4.2 `primary_language` from GitHub's API
 
-### 4.2 Where `primary_language` comes from (contract §5.7)
+- **Decision:** look up each repo's language from GitHub's API, cache it
+  in `dim_repos`, and refresh it weekly. Otherwise both language charts
+  are a single "(unknown)" slice.
+- **Scope:** every repo that appears in a language-split mart (PRs,
+  issues and stars). Narrower scopes would leave stars and issues on
+  PR-less repos as "(unknown)" in `mart_time_of_day_activity`.
+- **Costs, beyond "free":**
+  - a separate small job: the lookup is Python, and can't run inside
+    dbt;
+  - its own service account and a `secretAccessor` grant;
+  - the token from `security.md` §3.2;
+  - a schedule: riding the daily dbt Scheduler job, or a third job (the
+    last free one, cost model §6);
+  - dev tests from recorded responses only, since dev has no Secret
+    Manager.
+- **Staying under GitHub's 5,000 requests/hour** is designed in the M4
+  ADR.
 
-Two of the four charts are split by language.
-
-- **(a) Recommended: look it up from GitHub's API,** only for repos that
-  matter to the charts (repos with a PR opened or merged in the window),
-  cached in `dim_repos` and refreshed weekly. Uses the no-permission token
-  from `security.md` §3.2. Exact design in an M4 ADR, including staying
-  under GitHub's 5,000 requests an hour.
-- **(b) Leave it NULL.** Both language charts show a single "(unknown)"
-  slice, which makes them close to pointless.
-
-### 4.3 Confirmations
+### 4.3 Confirmed
 
 - The v1 definition (§1.1).
 - Merging into `main` **before** the cutover (§1.2).
@@ -202,8 +334,9 @@ Two of the four charts are split by language.
 |---|---|
 | Cost model | By 2027-08-01, before alerting charges can start |
 | ADR 0001 (tech stack) | 2027-04-05 |
-| ADR 0002, security doc | At cutover |
+| ADR 0002, security doc | At the cutover |
 | Ways of working | At each milestone review |
+| Credential ages (security §3.4) | At each milestone review, then monthly |
 
 ## 6. After v1 (optional, not planned)
 
@@ -211,11 +344,11 @@ Two of the four charts are split by language.
   running the same pipeline as Dagster assets. No cloud cost.
 - **A metric-absence alert** for "ingest never ran" (cost model §8.1):
   about $0.35/month once alerting is billed.
-- **Spend cap budgets** on Cloud Run as a second hard cap, at ADR 0002's
-  review.
+- **Spend cap budgets** on Cloud Run as a second hard cap. Considered at
+  ADR 0002's cutover review, not after v1.
 
 ## 7. Change log
 
 | Date | Change |
 |---|---|
-| 2026-11-18 | Initial version (A10), proposed for the author's approval. Folds in the A10 inputs from `FOUNDATION_BACKLOG.md`. |
+| 2026-11-18 | Initial version (A10). Folds in the A10 inputs from `FOUNDATION_BACKLOG.md`. Revised after independent review: dev CI identity in M2; A12 in M1; B11 checks must be required; v1 criteria made measurable and the date moved to after a full invoice month; merge-before-cutover details (Environments first, revert not reset); done-whens that move to the cutover; approval load; fuller costs for both decisions. §4 decisions approved by the author. |
