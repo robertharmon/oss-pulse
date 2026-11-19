@@ -1,0 +1,31 @@
+# SQL lint config (backlog B4). Rules follow CONVENTIONS.md §3.
+[sqlfluff]
+dialect = bigquery
+# Jinja with dbt's builtins (ref, source, config, var) lets models lint
+# without compiling them through dbt or connecting to BigQuery.
+templater = jinja
+max_line_length = 100
+exclude_rules = None
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+
+# Lowercase everything: keywords, identifiers, functions, literals, types.
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = lower
+
+# Leading commas: adding a column is a one-line diff.
+[sqlfluff:layout:type:comma]
+line_position = leading
