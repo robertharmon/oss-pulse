@@ -58,8 +58,9 @@
    gh auth login --with-token < token.txt             # then delete token.txt
    gh auth setup-git                                  # git now pushes via the bot's gh login
    ```
-5. Answer `QUESTIONS.md` Q1 (commit attribution) before the agent's first
-   bot push.
+5. **(agent machine)** Keep `git config --global user.name` / `user.email`
+   set to *you*. Commits stay authored by you; the bot only pushes them
+   (`QUESTIONS.md` Q1, answered 2026-11-18; DECISIONS §9).
 
 **Done when:**
 - `gh auth status` shows `<bot-github>`.

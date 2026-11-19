@@ -198,6 +198,17 @@ spawns a test before the fix merges.
   merge. Squash merge to keep main linear. Branch deleted on merge.
 - **PR descriptions:** use the template. Always answer "what could break?"
 - **No force-pushes to main.** Ever.
+- **During the agentic build-out** ([ADR 0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) §4):
+  PRs target `build/agentic` and are squash-merged there. `main` stays at
+  the `baseline-pre-agentic` tag until the build-out is done, then gets
+  one PR from `build/agentic`, merged with **"Rebase and merge"** so `main`
+  stays linear and keeps every PR's commit.
+- **Commits stay authored by Robert when a bot pushes them.** The agent's
+  machine keeps `git config user.name/email` set to Robert; the bot
+  account only pushes branches, opens PRs, and merges into
+  `build/agentic`. The author does the final merge into `main`, so
+  `main`'s history shows him. The bot is visible only as the opener and
+  merger of `build/agentic` PRs.
 - **No AI-assistant attribution.** Commits never carry
   `Co-Authored-By: Claude ...` (or any other AI co-author) trailers. Pull
   request descriptions never carry "Generated with Claude Code" or
@@ -259,3 +270,4 @@ Anything in this list requires its own ADR before scope changes.
 | 2026-10-05 | §9: added no-AI-assistant-attribution rule. | — |
 | 2026-10-06 | §10 added: no local Docker; deploy via `gcloud run --source`; `uv` for Python deps. Section 10 (scope boundaries) renumbered to §11. | — |
 | 2026-11-11 | §1: separated hard spend caps (billing kill switch, query quota, dev table expiration) from notification-only budget alerts. §1/§3/§4: dev and prod split into two billed, capped GCP projects; agents reach dev only, through their own bot identity. | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
+| 2026-11-18 | §9: one final `build/agentic` → `main` promotion via "Rebase and merge" (no per-milestone promotions); commits stay authored by Robert when the bot pushes (QUESTIONS Q1 answer). | [0002](docs/adr/0002-agentic-build-out-and-isolated-dev.md) |
