@@ -55,7 +55,7 @@ numeric ID, `1406578436` (owner ID `1310922`), not its name.
 | Dev CI SA | `serviceAccount:osp-ci-dev@oss-pulse-dev-<yyyy>.iam.gserviceaccount.com` | dev | GitHub Actions PR checks that need real BigQuery |
 | Ingest SA | `serviceAccount:osp-ingest-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run ingest service runtime |
 | dbt SA | `serviceAccount:osp-dbt-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Run dbt service runtime |
-| Scheduler SA | `serviceAccount:osp-scheduler-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Scheduler's identity when invoking ingest |
+| Scheduler SA | `serviceAccount:osp-scheduler-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Scheduler's identity when invoking ingest (hourly) and dbt (daily) |
 | Dashboard SA | `serviceAccount:osp-dashboard-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Streamlit Community Cloud app |
 | Build SA | `serviceAccount:osp-build-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | Cloud Build when building the services from source |
 | Terraform plan SA | `serviceAccount:osp-tf-plan-prod@oss-pulse-<yyyy>.iam.gserviceaccount.com` | prod | `terraform plan` in the `prod-plan` GitHub Environment |
@@ -160,12 +160,12 @@ Condition):
 | `serviceAccount:osp-ingest-prod@…` | `bucket:osp-raw-events-prod` | `roles/storage.objectUser` | - | Write each hour's Parquet. Needs delete as well as create, because re-ingesting an hour overwrites its file. |
 | `serviceAccount:osp-ingest-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataEditor` | - | Load jobs write each hour's partition of `raw_gharchive_events` (overwriting it on replay) and write `raw_ingest_audit`. |
 | `serviceAccount:osp-ingest-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | Load jobs are BigQuery jobs. |
-| `serviceAccount:osp-ingest-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | Ingest triggers the dbt build when its load finishes. |
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_raw_prod` | `roles/bigquery.dataViewer` | - | Read raw. Never writes it. |
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_staging_prod` | `roles/bigquery.dataEditor` | - | Build staging models. |
 | `serviceAccount:osp-dbt-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataEditor` | - | Build facts, dimensions and marts. |
 | `serviceAccount:osp-dbt-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | dbt runs queries. |
-| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly trigger. Nothing else. |
+| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-ingest-prod` | `roles/run.invoker` | - | The hourly ingest trigger. |
+| `serviceAccount:osp-scheduler-prod@…` | `run-service:oss-pulse-<yyyy>/us-central1/osp-dbt-prod` | `roles/run.invoker` | - | The daily dbt build trigger (`docs/cost_model.md` §8.1). Ingest no longer invokes dbt. |
 | `serviceAccount:osp-dashboard-prod@…` | `dataset:oss-pulse-<yyyy>.osp_analytics_prod` | `roles/bigquery.dataViewer` | - | Read marts only. Can't see raw or staging. |
 | `serviceAccount:osp-dashboard-prod@…` | `project:oss-pulse-<yyyy>` | `roles/bigquery.jobUser` | - | A `SELECT` is a query job; read access alone can't run one. A per-user query quota caps this identity (§6). |
 | `serviceAccount:osp-build-prod@…` | `project:oss-pulse-<yyyy>` | `roles/run.builder` | - | Cloud Build runs as this identity to build images from source. Replaces the Compute Engine default service account, which gets broad `editor` by default. |
@@ -242,7 +242,7 @@ disagree, §4 wins.
 | BigQuery `osp_analytics_prod` | `osp-dbt-prod` | `osp-dashboard-prod`; author; `osp-tf-plan-prod` (via `viewer`) |
 | Secret `osp_slack_webhook_url` | author | author |
 | Cloud Run `osp-ingest-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
-| Cloud Run `osp-dbt-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-ingest-prod` |
+| Cloud Run `osp-dbt-prod` | `osp-deploy-prod` (deploys) | invoked by `osp-scheduler-prod` |
 
 ## 6. Credentials and controls outside IAM
 
@@ -281,5 +281,6 @@ disagree, §4 wins.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | Scheduler SA now invokes the dbt service directly (daily build); ingest loses its invoker grant on dbt. Per `docs/cost_model.md` §8.1. |
 | 2026-11-11 | Second review pass: `prod-plan` limited to protected branches; Slack channel kept out of Terraform; kill-switch grants completed (Browser, billing-account Viewer, invoker); builder and CI SAs moved to explicit `dataEditor` + `jobUser`; CI loads fixtures per run instead of reading expiring shared tables; Compute-default `editor` absence becomes a B11 check. |
 | 2026-11-11 | Initial version (backlog A8), per ADR 0002. Corrects `architecture.md` §7 in four places: dbt has no GCS access; the dashboard also needs `bigquery.jobUser`; the separate "reviewer" identity is dropped (the solo author is Owner, so it would add an identity without removing any access); and "no human developer access in prod" doesn't hold for a solo Owner. Adds a dedicated build identity, environment-gated prod CI identities, and kill-switch identities. |

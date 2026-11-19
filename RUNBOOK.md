@@ -42,7 +42,7 @@ contract §3.2).
 | Sev | Meaning | Examples | Response |
 |---|---|---|---|
 | **SEV1** | Money is being spent unexpectedly, or a credential is exposed | A budget alert fires. A secret is found in a commit or log. An unknown principal appears in IAM. | Drop everything. Contain first (§3.4, §3.5), log after. |
-| **SEV2** | The pipeline is down, or data is wrong | Raw data is staler than its 2-hour freshness target (data contract §4.1), so freshness tests fail. A dbt test fails on a mart. Several hours in a row missing. The dashboard shows wrong numbers. | Same day. Fix forward through a PR, then replay the affected hours. |
+| **SEV2** | The pipeline is down, or data is wrong | Raw data is staler than its 2-hour freshness target (data contract §4.1), so the daily build's freshness test fails. (That test runs once a day, so a stalled ingest can take up to ~24h to surface.) A dbt test fails on a mart. Several hours in a row missing. The dashboard shows wrong numbers. | Same day. Fix forward through a PR, then replay the affected hours. |
 | **SEV3** | Degraded but self-limiting | One transient 5xx that exhausted retries. A late GH Archive hour. The dashboard is down because Streamlit Community Cloud itself is down. | Next working session. Replay if needed. |
 | **SEV4** | Cosmetic or near-miss | A flaky CI job. A docs mismatch found by a verifier. | Fix when convenient. Log only if there's a lesson. |
 
@@ -70,8 +70,16 @@ Example for 05:00 UTC on 2026-11-10. GH Archive's URL uses the
    A 200 means it's available.
 2. Re-trigger the ingest service with body `{"hour": "2026-11-10-05"}`.
    _(Exact command lands with the ingest service.)_
-3. Check that `raw_ingest_audit` shows a new successful run for the hour,
-   and that dbt finished green.
+3. Check that `raw_ingest_audit` shows a new successful run for the hour.
+4. Rebuild that day downstream. Nothing triggers dbt after a replay, and
+   the daily build only covers the previous day:
+   `dbt build --vars '{run_date: "2026-11-10"}'`. Check it finished green.
+   _(Exact invocation lands with the dbt service.)_
+
+**Hours older than 3 days** can't be replayed this way: raw and
+`stg_events` expire partitions after 3 days, and a load into an expired
+partition is deleted on arrival. Use the backfill path from the ingest ADR
+instead (`docs/cost_model.md` §5.3).
 
 ### 3.2 Missing hour (GH Archive 404)
 
