@@ -6,10 +6,10 @@
 > share one billing account and therefore **one set of free tiers**.
 >
 > **Status.** Volumes are measured (§2). Prices were checked against
-> Google's live pricing pages on 2026-11-18 (§3). The proposals in §8
-> change the data contract, architecture, access matrix and runbook. They
-> **await the author's approval**; until then, those docs still describe
-> the old design.
+> Google's live pricing pages on 2026-11-18 (§3). The four decisions in
+> §8 were **approved by the author on 2026-11-18**. They change the data
+> contract, architecture, access matrix and runbook, which are updated in
+> follow-up PRs.
 
 ---
 
@@ -310,10 +310,10 @@ Terraform and dbt config:
 - the Artifact Registry cleanup policy;
 - `full_refresh: false` on the models in §5.1.
 
-## 8. Proposals awaiting the author
+## 8. Decisions (approved 2026-11-18)
 
-Each changes docs that the author owns. None of them change until the
-author approves.
+Each changes docs that the author owns. All four were approved as written
+below; the follow-up PRs apply them to those docs.
 
 1. **Cadence: hourly ingest, daily `dbt build` at 01:30 UTC** (option A,
    §4.2).
@@ -409,4 +409,5 @@ if:
 
 | Date | Change |
 |---|---|
-| 2026-11-18 | Initial version (A11). Measured volumes, verified prices, query and storage model, four proposals (§8) pending author approval. Revised after independent review: incremental-write and dimension costs, snapshot-mart growth, GCS soft delete, backfill expiration, full-refresh guard, 28h freshness, per-user quota 6 GiB. |
+| 2026-11-18 | Initial version (A11). Measured volumes, verified prices, query and storage model, four proposals (§8). Revised after independent review: incremental-write and dimension costs, snapshot-mart growth, GCS soft delete, backfill expiration, full-refresh guard, 28h freshness, per-user quota 6 GiB. |
+| 2026-11-18 | §8 proposals approved by the author (option A cadence, retention, NOT NULL in schema, dashboard load-once + cache). |
