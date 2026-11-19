@@ -51,6 +51,24 @@ bugs are "two rows where the grain said one."
 - **Retention** is set per table below. Long-lived tables (`fct_events`,
   dimensions, snapshot marts) set `full_refresh: false`, because a full
   refresh would rebuild them from 3 days of staging and wipe the rest.
+- **Stable IDs.** Failure modes (`FM-nn`, §3.3 and §4.6), reconciliation
+  counts (`R-nn`, §5.8) and metamorphic relations (`M-nn`, §5.9) each have
+  an ID that tests reference by marker or tag. An ID is never renumbered
+  or reused. A retired one stays in its table, marked *retired*; one whose
+  spec isn't written yet is marked *pending* with the item that will write
+  it. CI fails if any other ID has no test (failure-mode coverage, backlog
+  B11).
+- **Which days a build covers.** The daily build at 01:30 UTC builds
+  yesterday (UTC), **plus every day still in raw (§4.1) that has a
+  successful ingest attempt newer than that day's last successful build,
+  or that has never built successfully.** This catches late hours and
+  failed builds without re-reading days that didn't change (FM-17, FM-19).
+  "The build's window" below means exactly those days.
+- **Fixtures and expiration.** In CI and fixture runs, the dbt target
+  turns partition expiration off, so fixtures can carry fixed past dates.
+  The B11 retention check verifies the prod target's settings, not CI's.
+  Mart-level tests may seed `fct_events` directly when they need more
+  history than staging holds.
 
 ---
 
@@ -154,22 +172,40 @@ historical volumes without re-measuring. The complete absence of
 `PushEvent` in the sample is likely the biggest single contributor
 to that drop; see §4.3 and §5.
 
-### 3.3 Known failure modes
+### 3.3 Known failure modes (upstream)
 
-Each has a defined handling pattern. Fail-fast at ingest
-([`../DECISIONS.md`](../DECISIONS.md) §6) with alerts routing per
-[`architecture.md`](architecture.md) §6.
+Fail-fast at ingest ([`../DECISIONS.md`](../DECISIONS.md) §6). Every
+attempt at an hour is recorded in `raw_ingest_audit` (§4.5), with the
+failure mode's ID when it fails. Pipeline-internal failure modes are in
+§4.6.
 
-| Failure | Signal | Handling |
-|---|---|---|
-| **Missing hour (404)** — rare; §3.2 found 72/72 hours present | HTTP 404 at the hourly URL past N+65 | Record the miss in `raw_ingest_audit` (hour, 404 timestamp, retry count), retry on the next scheduled runs, and **alert if the hour is still missing after 3 attempts** (≈3 hours). Since misses are rare, each one is worth a look. Downstream models skip gaps; the dashboard renders missing hours as blank, not errors. |
-| **Late hour (published after N+65)** | 404 at scheduled fetch, 200 at manual retry | Manual re-trigger of the ingest service with the same `{"hour": …}` body. Pipeline is idempotent on hour. |
-| **Transient 5xx** | HTTP 5xx on first try | Cloud Run auto-retries 3×. If all retries fail, alert; same recovery as missing hour. |
-| **Truncated file** | gzip decode error or JSON parse error mid-stream | Fail-fast raises; alert fires. Re-trigger manually once GH Archive republishes. |
-| **Schema drift (new event type)** | New `event_type` value appears in `stg_events` | Non-fatal at raw layer (we store the raw JSON); staging dedupe + mart logic may silently ignore it. Add an `accepted_values` dbt test on `event_type` so new types surface as test failures within a day. |
-| **Schema drift (new field in payload)** | New key inside `payload` JSON | Raw layer preserves `payload` as a JSON column; new fields are invisible to downstream models until explicitly extracted. No action needed unless a mart wants the new field. |
-| **Schema drift (removed field)** | Expected top-level field becomes NULL across the hour | Fail-fast: ingest asserts the first record contains `id`, `type`, `actor`, `repo`, `created_at`. Missing any raises. A null in any `REQUIRED` raw column fails that hour's load; the hour is retried on the next runs and alerts after 3 attempts, like a missing hour. |
-| **Zero-byte file** | `Content-Length: 0` or gzip-decoded empty body | Fail-fast raises at ingest; alert fires. Usually a GH Archive publication glitch; manually re-trigger once GHA republishes. |
+**Retry and alert rule.** Each scheduled run ingests the previous hour,
+and also retries every hour from the last 24 that has no success and
+fewer than 3 failed scheduled attempts since its last success.
+- **Availability failures** (FM-01, FM-03, FM-04, FM-05) may fix
+  themselves. Attempts 1 and 2 log `WARNING`, so they don't page; the
+  third logs `ERROR`, which alerts. Then scheduled retries stop, and the
+  author replays by hand (RUNBOOK §3.1).
+- **Content failures** (FM-06, FM-09, FM-12) fail the same way on the same
+  file every time. They log `ERROR` on the first attempt, and aren't
+  retried until a fix is merged and the hour is replayed.
+- **Precedence** when one file has several problems: the first failing
+  check in the order FM-09, FM-06, FM-12 is the one recorded.
+
+| ID | Failure | Signal | Handling |
+|---|---|---|---|
+| FM-01 | **Missing hour (404).** Rare: §3.2 found 72/72 hours present. | HTTP 404 at the hourly URL | Availability failure (rule above). An hour still missing after 3 attempts is recorded, and downstream counts simply exclude it; R-07 accounts for it. |
+| FM-02 | **Late hour** (published after the scheduled fetch) | 404 on one run, 200 on a later one | Picked up by the next run's retry. If the hour's day was already built, the next daily build rebuilds that day (FM-17). |
+| FM-03 | **Transient download failure:** HTTP 5xx, timeout, connection reset | Error on the GET | Ingest retries the download 3× with backoff within the run. Still failing: an availability failure (rule above). The Scheduler job itself doesn't retry. |
+| FM-04 | **Truncated download** | Bytes received ≠ `Content-Length`, or a gzip end-of-stream / JSON parse error mid-file | Treated as FM-03: the file is re-downloaded, never partly loaded. Observed 2026-11-18 on our side: one download stopped at 1.76 of 4.57 MB, and the retry was complete. |
+| FM-05 | **Zero-byte file** | `Content-Length: 0` or an empty decoded body | Availability failure (GH Archive may republish). |
+| FM-06 | **Missing or null required field** | A record lacks `id`, `type`, `actor`, `repo` or `created_at`, or a `REQUIRED` raw column would be null | Content failure. The Great Expectations suite catches it before the load; the `REQUIRED` schema is the backstop. |
+| FM-07 | **New event type** | `event_type` not in §4.3 | Doesn't block anything. The `accepted_values` test on `stg_events.event_type` runs at severity `warn` with the tag `alert`, and the dbt service logs `ERROR` for any warned test tagged `alert`. So it alerts within a day without freezing the marts. Adding the value is then a routine contract change (§7.3). |
+| FM-08 | **New field inside `payload`** | Unknown key in the JSON | No action. `payload` is kept verbatim; new fields are invisible downstream until a model extracts them. A test asserts that unknown keys don't break staging. |
+| FM-09 | **Event outside its file's hour** | `created_at` truncated to the hour ≠ the file's hour | Content failure. The hour-scoped load would reject the row anyway. Not observed: 0 of 9,291 events across 3 hours of 2026-11-17. A consequence used by FM-10: copies of one event always share an hour. |
+| FM-10 | **Duplicate `event_id` within an hour** | Same `event_id` on two rows of one file | Raw keeps both (raw has no `unique` test). `stg_events` keeps one and counts the rest (R-02). Because of FM-09, duplicates can't span hours or days, so deduplicating within each built day is complete. Not observed in the same sample. |
+| FM-11 | **Out-of-range `created_at`** | Outside `2015-01-01` … now + 1h | Defense in depth: FM-09 stops this at ingest in normal operation, so only seeded or backfilled raw can reach it. `stg_events` drops such rows and counts them (R-02). |
+| FM-12 | **Batch fails another data-quality expectation** (types, accepted values, row-count range) | Great Expectations suite | Content failure. Fixed by a PR (data or expectation), then replayed. |
 
 ### 3.4 What we do *not* promise upstream
 
@@ -225,7 +261,9 @@ backfill, debugging, and schema-drift detection.
 
 - **Tests:** `not_null` on every non-nullable column (as `REQUIRED`
   columns; ingest's pyarrow schema marks them `nullable=False` to match);
-  `unique` on `event_id`; freshness check per the target above.
+  freshness check per the target above. **No `unique` test on raw:** raw
+  keeps what GH Archive sent, duplicates included (FM-10); uniqueness is
+  enforced in staging.
 
 ### 4.2 `osp_staging_<env>.stg_events`
 
@@ -246,16 +284,23 @@ backfill, debugging, and schema-drift detection.
     (`BETWEEN TIMESTAMP("2015-01-01") AND CURRENT_TIMESTAMP() +
     INTERVAL 1 HOUR`); rows outside the window are dropped and
     counted in a load-audit view.
-  - Events by an actor on the `actor_suppressions` seed, or on a repo
-    whose owner is one, are dropped (removal requests,
-    [`security.md`](security.md) §2.2).
+  - **Only rows from each hour's latest successful ingest attempt** are
+    read (joined on `ingest_run_id` to `raw_ingest_audit`). Rows left by
+    a failed attempt (FM-14) are ignored.
+  - Then, in this order, each row is dropped by the first rule it meets:
+    1. **suppressed:** its `actor_id` is on the `actor_suppressions` seed,
+       or its `repo_id` is on the `repo_suppressions` seed (removal
+       requests, [`security.md`](security.md) §2.2);
+    2. **out of range:** `created_at` outside the window below (FM-11);
+    3. **duplicate:** a second or later row with an `event_id` already
+       kept for that day (FM-10).
   - `payload` stays as JSON.
   - `payload_action` (STRING, nullable) is extracted from
     `payload.action` here, once. `fct_events` reads it instead of the JSON,
     which may bill the whole `payload` column on every read.
 - **Tests:** `not_null` on `event_id`, `event_type`, `repo_id`,
   `actor_id`, `created_at`; `unique` on `event_id`; `accepted_values`
-  on `event_type`.
+  on `event_type` (severity `warn`, tag `alert`; FM-07).
 
 ### 4.3 Accepted `event_type` values
 
@@ -296,7 +341,62 @@ Both exist so dim tables don't scan `raw_gharchive_events` directly.
 
 ---
 
-## 5. Marts — the four contract-bearing tables
+### 4.5 `osp_raw_<env>.raw_ingest_audit`
+
+- **Grain:** one row per ingest attempt for one hour. An hour can have
+  several rows: failed attempts, then a success, and later replays.
+- **Writer:** ingest, with a **load job** (append), never DML
+  ([`cost_model.md`](cost_model.md) §4.4). The row is written at the end
+  of the attempt, so an attempt killed before then leaves no row (FM-18).
+- **Readers:** ingest itself, to find hours to retry and count their
+  attempts, using `tabledata.list` (free) rather than a query; staging
+  (latest success per hour, §4.2); the build's day selection (§1); dbt
+  reconciliation tests (R-01, R-07); the author when investigating.
+- **Retention:** kept. It's tiny (≈ 730 rows a month), and it can't be
+  re-derived if lost (RUNBOOK §3.5).
+- **Columns:**
+
+  | Column | Type | Nullable | Notes |
+  |---|---|---|---|
+  | `ingest_run_id` | STRING | No | UUID of this attempt. Primary key. Matches `raw_gharchive_events.ingest_run_id` for loaded rows. |
+  | `event_hour` | TIMESTAMP | No | The hour this attempt targeted. |
+  | `trigger` | STRING | No | `schedule`, `replay` or `backfill`. |
+  | `attempt_number` | INT64 | No | For `schedule` attempts: 1, 2 or 3, counting failed scheduled attempts since the hour's last success. 1 for `replay` and `backfill`. |
+  | `started_at` | TIMESTAMP | No | |
+  | `finished_at` | TIMESTAMP | No | |
+  | `outcome` | STRING | No | `success`, `missing` (FM-01), `failed` (anything else). |
+  | `failure_mode` | STRING | Yes | The `FM-nn` ID when `outcome != 'success'`. |
+  | `http_status` | INT64 | Yes | Last HTTP status from GH Archive. |
+  | `bytes_downloaded` | INT64 | Yes | Compressed bytes received. |
+  | `lines_read` | INT64 | Yes | Events read from the file. |
+  | `parquet_rows` | INT64 | Yes | Rows written to the Parquet file. |
+  | `rows_loaded` | INT64 | Yes | From the load job's statistics. |
+  | `gcs_uri` | STRING | Yes | The Parquet file written, on success. |
+  | `bq_load_job_id` | STRING | Yes | The raw load job, on success. |
+  | `error_message` | STRING | Yes | First 1,000 characters. Never contains credentials. |
+
+- **Tests:** `unique` on `ingest_run_id`; `accepted_values` on `trigger`
+  and `outcome`; `accepted_values` on `failure_mode`, listing only the IDs
+  ingest can record (FM-01, FM-03, FM-04, FM-05, FM-06, FM-09, FM-12,
+  FM-13, FM-14); R-01, R-07.
+
+### 4.6 Pipeline failure modes
+
+Failures inside our own pipeline, numbered with §3.3 (IDs are unique
+across both tables).
+
+| ID | Failure | Signal | Handling |
+|---|---|---|---|
+| FM-13 | **Replay of an hour whose day is too old to rebuild** | The target day's first hour is more than 70 hours old (raw keeps 72; 2 hours' margin for the rebuild) | Ingest refuses with a clear error instead of loading into a day that can no longer be rebuilt whole. Use the backfill path ([`cost_model.md`](cost_model.md) §5.3). |
+| FM-14 | **Rows don't reconcile at ingest** | `lines_read` ≠ `parquet_rows` (checked before the load), or `parquet_rows` ≠ `rows_loaded` (after) | The attempt is recorded `failed` and logs `ERROR`. A mismatch before the load stops it; rows from a mismatch after the load stay in raw, but staging ignores them (§4.2), and the next attempt's `WRITE_TRUNCATE` replaces them. |
+| FM-15 | **BigQuery quota exceeded** | `quotaExceeded` on a query | The build fails and logs `ERROR`. It isn't retried before the quota resets (midnight Pacific). Ingest is unaffected (loads aren't queries). The day is caught up by the next build (§1). |
+| FM-16 | **Language lookup fails or is rate-limited** | GitHub API 403/429/5xx | *Pending: spec in the M4 language ADR.* Intended handling: repos keep their last known language, or NULL (`(unknown)`), are retried next run, and the dbt build never fails because of it. |
+| FM-17 | **Hour loaded after its day was built** (a late hour 23, a replay) | A success in `raw_ingest_audit` newer than the day's last successful build | The next daily build rebuilds that day (§1). Nothing is lost while the day is still in raw (FM-13 guards the edge). |
+| FM-18 | **Ingest killed mid-attempt** (timeout, out of memory) | Cloud Run logs the crash; the attempt leaves no audit row | Cloud Run's crash log is an `ERROR`, which alerts. The hour has no success, so the next run retries it (§3.3 rule). Any rows it loaded are ignored by staging (no success row). |
+| FM-19 | **dbt build fails or times out** | Non-zero exit or request timeout | Logs `ERROR`, which alerts. Marts stay at their last good state. The day is caught up by the next build (§1); a fix goes through a PR (RUNBOOK §3.3). |
+| FM-20 | **Dashboard can't load a mart** | Query error, quota exceeded, or no partition for the expected date | The chart shows "data unavailable" (DECISIONS §6). For the snapshot marts, the dashboard asks for yesterday's partition and falls back once to the day before. RUNBOOK §3.6. |
+
+## 5. Marts — the four contract-bearing tables## 5. Marts — the four contract-bearing tables
 
 Marts are the only tables the dashboard reads. Each mart answers one
 README question (`../README.md` §"The questions it answers") and
@@ -384,7 +484,7 @@ feed — see §4.3. README wording drift tracked in §8.)
   | `repo_id` | INT64 | FK → `dim_repos`. |
   | `repo_name` | STRING | Copied from `dim_repos` at build time, so the dashboard reads marts only (§6.1). |
   | `as_of_date` | DATE | Snapshot day. |
-  | `stars_7d` | INT64 | WatchEvent count over 7 days ending `as_of_date`. |
+  | `stars_7d` | INT64 | WatchEvent count over 7 days ending `as_of_date`, inclusive (`as_of_date` and the 6 days before). Every `*_7d`, `*_30d` and `*_90d` window in §5 is inclusive the same way. |
   | `prs_opened_7d` | INT64 | `fct_events.is_pr_opened` count over same window. |
   | `prs_merged_7d` | INT64 | `fct_events.is_pr_merged` count over same window. |
   | `stars_delta_wow` | INT64 | `stars_7d` minus the same figure 7 days earlier. |
@@ -439,7 +539,7 @@ rather than contributors-who-commit. README wording drift tracked in §8.
   | `as_of_date` | DATE | Snapshot day. |
   | `distinct_pr_openers_90d` | INT64 | Distinct `actor_id` with `is_pr_opened = true` on this repo over trailing 90 days. |
   | `total_prs_opened_90d` | INT64 | Count of `is_pr_opened` events on this repo over trailing 90 days. |
-  | `gini` | FLOAT64 | Gini coefficient of PR-opens per actor over trailing 90 days. 0 = perfectly even, 1 = one actor did everything. |
+  | `gini` | FLOAT64 | Gini coefficient of PR-opens per actor over trailing 90 days, among actors who opened at least one PR, using the uncorrected mean-difference formula G = Σᵢ Σⱼ \|xᵢ − xⱼ\| / (2 n² x̄). Worked case: opens (3, 1) → 0.25. 0 = perfectly even. With *n* openers it approaches (*n*−1)/*n* when one actor opens almost every PR and each other actor opens one. So a repo with a single opener has `gini = 0`, and values near 1 need many openers with one dominating. |
 - **Tests:** `not_null` on all columns; `unique` on
   `(repo_id, as_of_date)`; `gini between 0 and 1`;
   `distinct_pr_openers_90d >= 1` (singular test — a row shouldn't exist
@@ -487,7 +587,41 @@ Which option is live is recorded in the first dbt PR that lands
 
 ---
 
-## 6. Downstream — Streamlit dashboard
+### 5.8 Reconciliation counts (must balance)
+
+Each is a dbt singular test, tagged with its ID, that runs in every build:
+in CI on fixtures and in prod daily. It checks **the build's window**
+(§1) only. A mismatch fails the build.
+
+| ID | Statement |
+|---|---|
+| R-01 | For the latest successful attempt of every hour in the window: `lines_read = parquet_rows = rows_loaded` = the count of `raw_gharchive_events` rows with that `ingest_run_id`. (Earlier attempts' rows were overwritten, so they aren't checked.) |
+| R-02 | For every `event_hour` in the window: the raw rows of the hour's latest successful attempt = `stg_events` rows + suppressed + out of range + duplicates, where each dropped row is counted once, under the first rule it met (§4.2). |
+| R-03 | For every `event_hour` in the window: `fct_events` rows = `stg_events` rows. |
+| R-04 | For every `as_of_date` built in this run: the sums of `stars_7d`, `prs_opened_7d` and `prs_merged_7d` over `mart_trending_repos` = the counts of `is_star`, `is_pr_opened` and `is_pr_merged` in `fct_events` over the same 7 days. (So every repo with any of those events in the window has a row.) |
+| R-05 | For every `as_of_date` built in this run: the sum of `total_prs_opened_90d` over `mart_contributor_concentration` = the count of `is_pr_opened` in `fct_events` over the same 90 days. |
+| R-06 | For each `event_type_bucket`: the sum of `event_count_30d` over `mart_time_of_day_activity` = the count of that bucket's events in `fct_events` over the same 30 days. And for each `(language, event_type_bucket)`, `pct_of_language_30d` sums to 100 (±0.01) over the 24 hours. |
+| R-07 | Every hour in the window, and every hour from the last 24, is in exactly one state: **succeeded** (has a success); **given up** (3 failed scheduled attempts since its last success, which alerted); or **pending** (fewer than 3 attempts, and younger than 3 hours). An hour in none of these is silently missing, and fails the test. |
+
+### 5.9 Metamorphic relations (change the input, predict the output)
+
+Each is a test that runs the pipeline (ingest or dbt) twice on fixtures,
+the second time with the input changed in a known way, and compares the
+outputs. Tagged with its ID. "A checksum" of a table means a checksum over
+every column except `ingest_run_id` and `ingested_at`, which change on every
+load by design.
+
+| ID | Change to the input | Expected output |
+|---|---|---|
+| M-01 | Ingest the same hour a second time | Raw, staging, fact and marts have the same row counts and checksums. |
+| M-02 | Add +1 day to every `created_at`, and to `run_date` | Every `event_hour` and `as_of_date` moves by one day; every measure is unchanged. Fixtures stay inside one calendar month both before and after the shift (so `month` doesn't change), and end at least 2 days before now (so the shift stays inside staging's time window). |
+| M-03 | Relabel actors with a one-to-one mapping of `actor_id`s | `gini`, distinct-contributor counts and shares are unchanged. |
+| M-04 | On one repo, give every PR opener the same number of PR opens | That repo's `gini = 0`. |
+| M-05 | Multiply every actor's PR opens on a repo by the same factor | That repo's `gini` is unchanged. |
+| M-06 | Duplicate every row within its hour (same `event_id`) | Staging, fact and marts are unchanged; R-02 counts the duplicates (FM-10). |
+| M-07 | Add events for one repo only | Only that repo's rows change in `mart_trending_repos` and `mart_contributor_concentration`. |
+
+## 6. Downstream — Streamlit dashboard## 6. Downstream — Streamlit dashboard
 
 ### 6.1 Consumer
 
@@ -601,3 +735,5 @@ Known gaps this doc doesn't yet answer. Each is tracked for later.
 | 2026-11-18 | Applied the cost model's approved decisions ([`cost_model.md`](cost_model.md) §8): `not_null` becomes a schema constraint (§1, §3.3, §4.1); daily dbt cadence with 28h freshness on everything below raw, including the three marts that had 24h (§4.2–§5.6, §6.2); retention per table (raw and `stg_events` 3 days, `fct_events` 400 days, snapshot marts 30 days, dims kept) with `full_refresh: false` on long-lived tables; `insert_overwrite` incrementals; `stg_events.payload_action` added; snapshot marts partitioned on `as_of_date`; dashboard loads each mart once and caches (§6.1). |
 | 2026-11-18 | §8 PII posture and language-lookup token marked resolved by `security.md` §2.2 and §3.2. |
 | 2026-11-18 | §5.3, §5.5: `repo_name` added to the two repo-level marts (additive), so the dashboard needn't read `dim_repos`. §4.2: `actor_suppressions` filter for removal requests. |
+| 2026-11-18 | Failure modes get stable IDs: §3.3 rewritten as FM-01…FM-12 (adds truncated download, event outside its hour, duplicates, out-of-range timestamps, data-quality failure; transient retries move into ingest; late hours are retried automatically); §4.6 adds pipeline failure modes FM-13…FM-16. §4.5 adds `raw_ingest_audit`. §5.8 reconciliation counts R-01…R-07 and §5.9 metamorphic relations M-01…M-07. §5.5 `gini` range clarified. §1 stable-ID rule. |
+| 2026-11-18 | Review fixes to the same-day additions: retry/alert rule split into availability vs content failures, with precedence; raw loses its `unique` test (staging dedupes; FM-09 makes per-day dedupe complete); staging reads only each hour's latest successful attempt, and drops rows by suppression → range → duplicate in that order; the build's window (§1) includes catch-up days; CI turns expiration off; FM-17…FM-20 added (late hour after build, killed ingest, failed build, dashboard); FM-07 alerts without freezing marts; FM-13 cutoff is per day; FM-14 checks before and after the load; FM-16 pending; R-01, R-02, R-06 and R-07 corrected; M-01 checksum excludes load columns; M-02 constraints; gini formula pinned; windows inclusive. |

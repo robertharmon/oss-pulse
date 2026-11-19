@@ -186,10 +186,11 @@ missed:
   subquery doesn't prune partitions, so it bills the whole table.
 - **Dashboard queries avoid `CURRENT_DATE()` and other non-deterministic
   functions.** Those disable BigQuery's free result cache.
-- **No standing lookback window in the daily build.** A replayed or late
-  hour is rebuilt by running `dbt build` for that date
-  (`--vars '{run_date: …}'`) as part of the replay procedure, instead of
-  re-reading three days of payload every day.
+- **No standing lookback window in the daily build.** The build rebuilds
+  yesterday plus only the days that changed or failed since their last
+  build (contract §1, FM-17), found from `raw_ingest_audit`. That costs a
+  day's staging per changed day, instead of re-reading three days of
+  payload every day.
 - **`full_refresh: false` on `fct_events`, the dims and the snapshot
   marts.** With 3-day staging, a full refresh would rebuild 400 days of
   history from 3 days of data and wipe the rest.

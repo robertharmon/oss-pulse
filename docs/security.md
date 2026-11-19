@@ -67,10 +67,10 @@ anyone can look them up, but they still point at real people. So:
 - **Removal requests** (someone asks us to drop their data). Deleting rows
   isn't enough: the next build would bring them back from staging, and
   their future events keep arriving. So:
-  1. The author adds their `actor_id` to a **suppression list** (a dbt
-     seed, `actor_suppressions`). `stg_events` drops every event by that
-     actor, and every event on a repo whose owner part of `repo_name` is
-     that actor's login.
+  1. The author adds their `actor_id` to the **`actor_suppressions`** dbt
+     seed, and the IDs of repos they own to **`repo_suppressions`**
+     (looked up once, at request time). `stg_events` drops every event by
+     that actor and every event on those repos (contract §4.2).
   2. The author deletes the actor's existing rows from `dim_actors`,
      `fct_events` and the affected `dim_repos` rows, then rebuilds the
      marts.
@@ -78,8 +78,8 @@ anyone can look them up, but they still point at real people. So:
      14 days. Nothing is purged early.
   4. Log it as a SEV4 runbook entry, without the login. Reply that GH
      Archive is a separate service with its own policy.
-  The seed is the only place a suppressed ID is kept. It's an `actor_id`
-  number, not a handle.
+  The seeds are the only place a suppressed person is kept, and they hold
+  numeric IDs, not handles.
 
 ### 2.3 Free text is untrusted input
 

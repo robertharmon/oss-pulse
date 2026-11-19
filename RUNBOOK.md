@@ -22,20 +22,22 @@ paging is out of scope (DECISIONS §11).
 | Source | Fires when | Lands in |
 |---|---|---|
 | Cloud Logging alert policy (prod) | Any `ERROR` log from `osp-ingest-prod` or `osp-dbt-prod` (this includes dbt test failures, which exit non-zero) | Slack, through a notification channel created by hand. Its webhook URL is also kept as a record in Secret Manager `osp_slack_webhook_url`; nothing reads it from there. |
-| Ingest, missing-hour rule (prod) | An hour is still missing (HTTP 404) after 3 attempts (data contract §3.3) | Same Slack channel |
+| Ingest retry rule (prod) | An hour fails its 3rd scheduled attempt (availability failures), or fails once on its content (data contract §3.3) | Same Slack channel (it's an `ERROR` log) |
 | GitHub Actions | A workflow fails on `main` or `build/agentic` | Same Slack channel, through GitHub secret `SLACK_WEBHOOK_URL` |
 | Google budget alert (dev, prod) | Spend crosses $1 / $2 (dev) or $1 / $5 (prod) | Email to the author. **Notification only. It doesn't stop spending** (DECISIONS §1). |
 | Billing kill switch (dev, prod) | Spend crosses the budget ($2 dev, $5 prod) | It **unlinks billing**, so every service in that project stops. You'll find out from the budget email and from everything else failing. See §3.5. |
 
 A missing hour is rare: every hour probed in Nov 2026 was present (data
-contract §3.2).
-- **First and second 404s** for an hour are logged at `WARNING` (not
-  `ERROR`, so they don't page), recorded in `raw_ingest_audit`, and
-  retried on the next runs.
-- **The third failed attempt** logs at `ERROR`, which alerts. Until then
-  the hour isn't a failure, just not published yet. That's how
+contract §3.2). The full rule is data contract §3.3:
+- **Availability failures** (404, 5xx, truncated, zero-byte): attempts 1
+  and 2 log `WARNING` (they don't page) and are retried on the next runs.
+  The 3rd logs `ERROR`, which alerts, and scheduled retries stop. Until
+  then the hour isn't a failure, just not available yet. That's how
   DECISIONS §6's "non-2xx raises" applies to an hour GH Archive may still
   be writing.
+- **Content failures** (bad or missing fields, an event outside its hour,
+  a failed data-quality expectation) log `ERROR` on the first attempt:
+  the same file will fail the same way every time.
 
 ## 2. Severity levels
 
@@ -43,7 +45,7 @@ contract §3.2).
 |---|---|---|---|
 | **SEV1** | Money is being spent unexpectedly, or a credential is exposed | A budget alert fires. A secret is found in a commit or log. An unknown principal appears in IAM. | Drop everything. Contain first (§3.4, §3.5), log after. |
 | **SEV2** | The pipeline is down, or data is wrong | Raw data is staler than its 2-hour freshness target (data contract §4.1), so the daily build's freshness test fails. (That test runs once a day, so a stalled ingest can take up to ~24h to surface.) A dbt test fails on a mart. Several hours in a row missing. The dashboard shows wrong numbers. | Same day. Fix forward through a PR, then replay the affected hours. |
-| **SEV3** | Degraded but self-limiting | One transient 5xx that exhausted retries. A late GH Archive hour. The dashboard is down because Streamlit Community Cloud itself is down. | Next working session. Replay if needed. |
+| **SEV3** | Degraded but self-limiting | An hour that failed its 3 scheduled attempts. A late GH Archive hour. The dashboard is down because Streamlit Community Cloud itself is down. | Next working session. Replay if needed. |
 | **SEV4** | Cosmetic or near-miss | A flaky CI job. A docs mismatch found by a verifier. | Fix when convenient. Log only if there's a lesson. |
 
 **Rule of thumb:** if you're unsure between two levels, pick the higher one
@@ -71,15 +73,15 @@ Example for 05:00 UTC on 2026-11-10. GH Archive's URL uses the
 2. Re-trigger the ingest service with body `{"hour": "2026-11-10-05"}`.
    _(Exact command lands with the ingest service.)_
 3. Check that `raw_ingest_audit` shows a new successful run for the hour.
-4. Rebuild that day downstream. Nothing triggers dbt after a replay, and
-   the daily build only covers the previous day:
-   `dbt build --vars '{run_date: "2026-11-10"}'`. Check it finished green.
-   _(Exact invocation lands with the dbt service.)_
+4. The next daily build rebuilds that day automatically (data contract
+   §1, FM-17). To see it sooner, run
+   `dbt build --vars '{run_date: "2026-11-10"}'` and check it finished
+   green. _(Exact invocation lands with the dbt service.)_
 
-**Hours older than 3 days** can't be replayed this way: raw and
-`stg_events` expire partitions after 3 days, and a load into an expired
-partition is deleted on arrival. Use the backfill path from the ingest ADR
-instead (`docs/cost_model.md` §5.3).
+**Days whose first hour is more than 70 hours old** can't be replayed this
+way, and ingest refuses (FM-13): raw and `stg_events` expire partitions
+after 3 days, so the day could no longer be rebuilt whole. Use the
+backfill path from the ingest ADR instead (`docs/cost_model.md` §5.3).
 
 ### 3.2 Missing hour (GH Archive 404)
 
