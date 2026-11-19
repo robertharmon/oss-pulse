@@ -92,7 +92,8 @@ author clears that batch sets the pace of those milestones.
   - daily dbt from its own Scheduler job; ingest doesn't invoke dbt;
   - retention instead of "keep forever";
   - no Docker or Artifact-Registry-push story (DECISIONS §10);
-  - measured file sizes, no `PushEvent`, retries on the Scheduler job;
+  - measured file sizes, no `PushEvent`, and retries as the contract
+    specifies (FM-03: inside ingest's run; the Scheduler job doesn't retry);
   - the access matrix's corrections to §7;
   - pointers to the data contract, access matrix, runbook, cost model and
     security doc, which all exist now;
@@ -102,8 +103,8 @@ author clears that batch sets the pace of those milestones.
   It **doesn't** decide whether dbt runs as a Cloud Run service or job:
   the ingest ADR does.
 - [ ] **Contract additions.** Done when:
-  - contract §3.3 failure modes have IDs (`FM-01`…) and §3.3's "Cloud Run
-    auto-retries 3×" is corrected (retries live on the Scheduler job);
+  - contract failure modes have IDs (`FM-01`…) and §3.3's "Cloud Run
+    auto-retries 3×" is replaced by the real retry rule;
   - `raw_ingest_audit` has an entry;
   - the reconciliation counts and metamorphic relations are listed as
     testable statements;
