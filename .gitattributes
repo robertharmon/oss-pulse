@@ -1,0 +1,12 @@
+# Normalize line endings: LF in the repo and in Linux CI, whatever the
+# checkout OS. Windows tools that need CRLF get it explicitly.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary data never gets line-ending conversion.
+*.gz binary
+*.parquet binary
+*.png binary
+*.jpg binary

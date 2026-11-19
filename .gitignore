@@ -1,0 +1,78 @@
+# oss-pulse .gitignore (backlog B2). Categories follow the backlog item:
+# Python, Terraform, dbt, secrets, notebooks, OS and editor files.
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+dist/
+build/
+*.egg-info/
+
+# --- Terraform ---
+# State and plans can hold resource details; state lives in the GCS state
+# bucket. The provider lock file (.terraform.lock.hcl) IS committed.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+# Variable files may carry environment values; examples are committed as
+# *.tfvars.example.
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# --- dbt ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+logs/
+
+# --- Secrets (DECISIONS §5: never in the repo) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+client_secret*.json
+*service-account*.json
+*-sa-key*.json
+*.keyfile.json
+.streamlit/secrets.toml
+token.txt
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Local data and scratch ---
+# Real GH Archive downloads and local Parquet stay out of git. Test
+# fixtures under tests/fixtures/ are committed on purpose.
+/data/
+/scratch/
+/tmp/
+
+# --- OS and editors ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+
+# --- Claude Code (per-user settings; shared settings.json is committed) ---
+.claude/settings.local.json
