@@ -20,7 +20,11 @@ TEST_GLOBS = ("tests/**/*.py", "dbt/tests/**/*.sql", "dbt/**/*.yml")
 _ID = r"(?:FM|R|M)-\d{2}"
 # A definition is a table row whose first cell is the ID.
 _ROW = re.compile(rf"^\|\s*({_ID})\s*\|(.*)$", re.MULTILINE)
-_MARKER = re.compile(rf"""\.(?:failure_mode|metamorphic)\(\s*["']({_ID})["']""")
+# Only a decorator line counts, so a marker quoted inside a string doesn't.
+_MARKER = re.compile(
+    rf"""^\s*@pytest\.mark\.(?:failure_mode|metamorphic)\(\s*["']({_ID})["']""",
+    re.MULTILINE,
+)
 _TAGS = re.compile(r"tags\s*[:=]\s*\[([^\]]*)\]")
 _ID_IN_TAGS = re.compile(rf"\b({_ID})\b")
 # Status markers are italic (single asterisk): `*retired*`, `*Pending: …*`.
