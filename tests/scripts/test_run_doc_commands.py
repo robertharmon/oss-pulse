@@ -51,7 +51,7 @@ LIST_DOC = """# Setup
 1. Clone the repo:
 
    ```bash syntax-only
-   git clone \
+   git clone \\
      https://github.com/example/oss-pulse.git
    cd oss-pulse
    ```
@@ -70,7 +70,7 @@ def test_indented_tagged_block_in_list_item_is_extracted() -> None:
             line=5,
             mode="syntax-only",
             code=(
-                "git clone \\n"
+                "git clone \\\n"
                 "  https://github.com/example/oss-pulse.git\n"
                 "cd oss-pulse\n"
             ),
