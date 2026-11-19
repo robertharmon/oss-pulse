@@ -248,8 +248,8 @@ disagree, §4 wins.
 
 | Item | Lives in | Notes |
 |---|---|---|
-| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation. Scoped to read-only on marts, with a **per-user BigQuery query quota** so a leaked key can't use up the project's 10 GB/day and stall dbt. This contradicts DECISIONS §5 ("keys live in Secret Manager") as written; A12 (`docs/security.md`, pending) reconciles §5 and sets the rotation schedule. |
-| Bot GitHub account's fine-grained token | The agent machine's `gh` login | Repo-scoped, **write** not admin, 90-day expiry (`docs/author_setup.md` §1.2). Can't change rulesets, environments or secrets. |
+| `osp-dashboard-prod` key JSON | Streamlit Community Cloud app secrets | **The one key-file exception.** Streamlit Community Cloud can't use Workload Identity Federation. Scoped to read-only on marts, with a **per-user BigQuery query quota** so a leaked key can't use up the project's 10 GB/day and stall dbt. DECISIONS §5 names this exception; `docs/security.md` §3.1 sets the handling and the 90-day rotation. |
+| Bot GitHub account's classic token (`repo`, `workflow`) | The agent machine's `gh` login | Limited by the bot's **write** (not admin) role, 90-day expiry (`docs/author_setup.md` §1.3). Fine-grained tokens can't act on a personal repo the bot only collaborates on. Can't change rulesets, environments or secrets. |
 | Bot Google account's login | The agent machine's `gcloud` config | Can only mint tokens for `osp-builder-dev` (§4.1). |
 | Slack webhook for CI alerts | GitHub Actions secret `SLACK_WEBHOOK_URL` | Allowed by DECISIONS §5. |
 | WIF provider name, service-account emails | GitHub Actions variables (not secrets) | Identifiers, not credentials. |
@@ -281,6 +281,7 @@ disagree, §4 wins.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | §6: bot token corrected to a classic token (matches author_setup §1.3); dashboard key row points to `security.md` §3.1. |
 | 2026-11-18 | Scheduler SA now invokes the dbt service directly (daily build); ingest loses its invoker grant on dbt. Per `docs/cost_model.md` §8.1. |
 | 2026-11-11 | Second review pass: `prod-plan` limited to protected branches; Slack channel kept out of Terraform; kill-switch grants completed (Browser, billing-account Viewer, invoker); builder and CI SAs moved to explicit `dataEditor` + `jobUser`; CI loads fixtures per run instead of reading expiring shared tables; Compute-default `editor` absence becomes a B11 check. |
 | 2026-11-11 | Initial version (backlog A8), per ADR 0002. Corrects `architecture.md` §7 in four places: dbt has no GCS access; the dashboard also needs `bigquery.jobUser`; the separate "reviewer" identity is dropped (the solo author is Owner, so it would add an identity without removing any access); and "no human developer access in prod" doesn't hold for a solo Owner. Adds a dedicated build identity, environment-gated prod CI identities, and kill-switch identities. |

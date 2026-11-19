@@ -69,6 +69,15 @@
 - `cmdkey /list | findstr github` shows nothing of yours.
 - A test PR the bot opens into `main` can't be merged by the bot.
 
+### 1.4 Repo security settings (GitHub UI, as yourself)
+**Settings → Advanced Security** (`docs/security.md` §5–§6):
+1. Turn on **Private vulnerability reporting**. `SECURITY.md` points
+   reporters to it.
+2. Turn on **Dependabot alerts**.
+3. Turn on **Secret scanning** and **Push protection**.
+
+**Done when:** the repo's **Security** tab shows "Report a vulnerability".
+
 ---
 
 ## Part 2 — Dev project (before milestone 2's BigQuery work)
@@ -173,3 +182,4 @@ output but holds no prod credentials.
 |---|---|
 | 2026-11-11 | Initial version, per ADR 0002. |
 | 2026-11-11 | Review fixes: branch rules moved to Part 1 (`main` requires approval, `build/agentic` protected now); classic token instead of fine-grained; clear Windows Credential Manager; agent SA gets `dataEditor` + `jobUser`; dev bucket with 7-day lifecycle; Pub/Sub topic created before the budget; `gcloud` impersonation configured. |
+| 2026-11-18 | §1.3 step 5: commit authorship (Q1 answered). §1.4 added: private vulnerability reporting, Dependabot alerts, secret scanning. |
